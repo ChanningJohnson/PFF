@@ -1,0 +1,407 @@
+<!--
+╔══════════════════════════════════════════════════════════════╗
+║           PFF TRADE ANALYZER — EMBED SNIPPET                ║
+║  Copy the 4 lines below and paste into any article in CMS:  ║
+╠══════════════════════════════════════════════════════════════╣
+
+<iframe id="pff-trade" src="https://channingjohnson.github.io/PFF/widget.html" style="width:100%;border:none;min-height:860px" title="PFF Trade Analyzer" loading="lazy"></iframe>
+<script>window.addEventListener('message',function(e){if(e.data&&e.data.pffHeight)document.getElementById('pff-trade').style.height=e.data.pffHeight+'px'});</script>
+
+╚══════════════════════════════════════════════════════════════╝
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PFF Trade Analyzer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: '#3B82F6'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 0; background: #0f172a; }
+    .fade-in { animation: fadeIn .2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    input:focus { outline: none; }
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React 18 + Babel Standalone (no build step needed) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ─── Player Database ──────────────────────────────────────────────────
+    const DB = {
+      'Patrick Mahomes':    { pos: 'QB',  proj: 285, bye: 10, tier: 'Elite' },
+      'Jalen Hurts':        { pos: 'QB',  proj: 275, bye: 14, tier: 'Elite' },
+      'Josh Allen':         { pos: 'QB',  proj: 270, bye: 9,  tier: 'Elite' },
+      'Lamar Jackson':      { pos: 'QB',  proj: 260, bye: 11, tier: 'Excellent' },
+      'Joe Burrow':         { pos: 'QB',  proj: 248, bye: 12, tier: 'Excellent' },
+      'Dak Prescott':       { pos: 'QB',  proj: 240, bye: 7,  tier: 'Great' },
+      'Tyreek Hill':        { pos: 'WR',  proj: 178, bye: 6,  tier: 'Elite' },
+      'Justin Jefferson':   { pos: 'WR',  proj: 172, bye: 13, tier: 'Elite' },
+      "Ja'Marr Chase":      { pos: 'WR',  proj: 165, bye: 12, tier: 'Excellent' },
+      'Stefon Diggs':       { pos: 'WR',  proj: 168, bye: 14, tier: 'Excellent' },
+      'CeeDee Lamb':        { pos: 'WR',  proj: 162, bye: 7,  tier: 'Excellent' },
+      'Davante Adams':      { pos: 'WR',  proj: 155, bye: 13, tier: 'Great' },
+      'A.J. Brown':         { pos: 'WR',  proj: 152, bye: 14, tier: 'Great' },
+      'Deebo Samuel':       { pos: 'WR',  proj: 140, bye: 9,  tier: 'Great' },
+      'Amon-Ra St. Brown':  { pos: 'WR',  proj: 138, bye: 15, tier: 'Great' },
+      'Christian McCaffrey':{ pos: 'RB',  proj: 289, bye: 7,  tier: 'Elite' },
+      'Josh Jacobs':        { pos: 'RB',  proj: 198, bye: 10, tier: 'Excellent' },
+      'Derrick Henry':      { pos: 'RB',  proj: 195, bye: 11, tier: 'Excellent' },
+      'Saquon Barkley':     { pos: 'RB',  proj: 189, bye: 9,  tier: 'Excellent' },
+      'Breece Hall':        { pos: 'RB',  proj: 172, bye: 8,  tier: 'Great' },
+      'Travis Etienne':     { pos: 'RB',  proj: 168, bye: 12, tier: 'Great' },
+      'Tony Pollard':       { pos: 'RB',  proj: 155, bye: 7,  tier: 'Great' },
+      'Rhamondre Stevenson':{ pos: 'RB',  proj: 148, bye: 14, tier: 'Solid' },
+      'Travis Kelce':       { pos: 'TE',  proj: 156, bye: 10, tier: 'Elite' },
+      'Mark Andrews':       { pos: 'TE',  proj: 142, bye: 11, tier: 'Excellent' },
+      'T.J. Hockenson':     { pos: 'TE',  proj: 130, bye: 13, tier: 'Great' },
+      'Sam LaPorta':        { pos: 'TE',  proj: 118, bye: 15, tier: 'Great' },
+      'Dalton Kincaid':     { pos: 'TE',  proj: 112, bye: 9,  tier: 'Solid' },
+      'San Francisco':      { pos: 'DEF', proj: 118, bye: 9,  tier: 'Excellent' },
+      'Buffalo':            { pos: 'DEF', proj: 112, bye: 9,  tier: 'Excellent' },
+      'Baltimore':          { pos: 'DEF', proj: 108, bye: 11, tier: 'Great' },
+      'Dallas':             { pos: 'DEF', proj: 104, bye: 7,  tier: 'Great' },
+      'New England':        { pos: 'DEF', proj: 96,  bye: 14, tier: 'Solid' },
+    };
+
+    // ─── Tier config ──────────────────────────────────────────────────────
+    const TIER_STYLE = {
+      Elite:     'bg-yellow-500 text-yellow-900',
+      Excellent: 'bg-blue-500   text-white',
+      Great:     'bg-emerald-600 text-white',
+      Solid:     'bg-slate-500  text-white',
+    };
+
+    // ─── SVG Icons (no icon library needed) ───────────────────────────────
+    const IconPlus = () => (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+    );
+    const IconX = () => (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    );
+    const IconTrendUp = () => (
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+      </svg>
+    );
+    const IconTrendDown = () => (
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/>
+      </svg>
+    );
+
+    // ─── Tier Badge ───────────────────────────────────────────────────────
+    function TierBadge({ tier }) {
+      return (
+        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest ${TIER_STYLE[tier] || 'bg-slate-600 text-white'}`}>
+          {tier}
+        </span>
+      );
+    }
+
+    // ─── Player Card ──────────────────────────────────────────────────────
+    function PlayerCard({ name, score, onRemove }) {
+      const p = DB[name];
+      return (
+        <div className="fade-in flex justify-between items-center bg-slate-700/80 hover:bg-slate-600/80 transition-colors p-3 rounded-lg group">
+          <div className="flex flex-col gap-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-white font-semibold text-sm truncate">{name}</span>
+              <TierBadge tier={p.tier} />
+            </div>
+            <span className="text-slate-400 text-xs">
+              {p.pos} · <span className="text-slate-200">{score.toFixed(1)} pts</span> · Bye Wk {p.bye}
+            </span>
+          </div>
+          <button
+            onClick={onRemove}
+            className="ml-3 shrink-0 text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+            aria-label={`Remove ${name}`}
+          >
+            <IconX />
+          </button>
+        </div>
+      );
+    }
+
+    // ─── Team Panel ───────────────────────────────────────────────────────
+    function TeamPanel({ teamNum, accentClass, bgClass, borderClass, players, total, scoreOf, onAdd, onRemove }) {
+      const [input, setInput]   = useState('');
+      const [error, setError]   = useState('');
+      const label = teamNum === 1 ? 'Team 1 Gives' : 'Team 2 Gets';
+
+      const handleAdd = () => {
+        const found = Object.keys(DB).find(n => n.toLowerCase() === input.trim().toLowerCase());
+        if (!found) { setError('Player not found — check the list below.'); return; }
+        if (players.includes(found)) { setError(`${found} is already added.`); return; }
+        setError('');
+        onAdd(found);
+        setInput('');
+      };
+
+      const posSummary = () => {
+        const c = {};
+        players.forEach(p => { c[DB[p].pos] = (c[DB[p].pos] || 0) + 1; });
+        return Object.entries(c).map(([pos, n]) => `${pos}×${n}`).join('  ');
+      };
+
+      return (
+        <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 flex flex-col">
+          <h2 className={`text-lg font-bold mb-4 ${accentClass}`}>{label}</h2>
+
+          {/* Input row */}
+          <div className="flex gap-2 mb-1">
+            <input
+              type="text"
+              list="pff-players"
+              value={input}
+              onChange={e => { setInput(e.target.value); setError(''); }}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              placeholder="Type player name…"
+              className="flex-1 px-3 py-2 bg-slate-700 text-white text-sm rounded-lg border border-slate-600 placeholder-slate-500 focus:border-slate-400 transition-colors"
+            />
+            <button
+              onClick={handleAdd}
+              className={`${bgClass} text-white px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-90`}
+            >
+              <IconPlus /> Add
+            </button>
+          </div>
+          {error && <p className="text-red-400 text-xs mb-2">{error}</p>}
+
+          {/* Player list */}
+          <div className="flex flex-col gap-1.5 mt-3 mb-4 min-h-[56px]">
+            {players.length === 0
+              ? <p className="text-slate-600 text-sm italic">No players added yet…</p>
+              : players.map((p, i) => (
+                  <PlayerCard key={p} name={p} score={scoreOf(p)} onRemove={() => onRemove(i)} />
+                ))
+            }
+          </div>
+
+          {/* Total box */}
+          {players.length > 0 && (
+            <div className={`mt-auto rounded-lg p-4 border ${borderClass}`}>
+              <p className="text-slate-400 text-xs font-mono mb-1">{posSummary()}</p>
+              <p className={`text-2xl font-bold ${accentClass}`}>{total.toFixed(1)} <span className="text-base font-normal text-slate-400">pts</span></p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Main Widget ──────────────────────────────────────────────────────
+    function TradeAnalyzer() {
+      const [scoring,  setScoring]   = useState('ppr');
+      const [team1, setTeam1]        = useState([]);
+      const [team2, setTeam2]        = useState([]);
+      const rootRef = useRef(null);
+
+      // Auto-resize iframe parent
+      useEffect(() => {
+        const el = rootRef.current;
+        if (!el) return;
+        const obs = new ResizeObserver(() => {
+          window.parent.postMessage({ pffHeight: el.scrollHeight + 20 }, '*');
+        });
+        obs.observe(el);
+        return () => obs.disconnect();
+      }, []);
+
+      const mult = scoring === 'ppr' ? 1 : scoring === 'half-ppr' ? 0.85 : 0.70;
+      const scoreOf  = name => (DB[name]?.proj ?? 0) * mult;
+      const totalOf  = arr  => arr.reduce((s, p) => s + scoreOf(p), 0);
+
+      const t1Total  = totalOf(team1);
+      const t2Total  = totalOf(team2);
+      const diff     = t1Total - t2Total;
+      const absDiff  = Math.abs(diff);
+      const isFair   = absDiff < 10 && t1Total > 0 && t2Total > 0;
+      const hasBoth  = t1Total > 0 && t2Total > 0;
+
+      // Suggestions
+      const suggestions = (() => {
+        if (!hasBoth) return [];
+        const tips = [];
+        if (absDiff > 20) {
+          const loser = diff > 0 ? 'Team 2' : 'Team 1';
+          tips.push(`${loser} could add a mid-tier WR or RB to balance the deal.`);
+        }
+        const byeConflict = (arr) => {
+          const seen = new Set(), dupes = new Set();
+          arr.forEach(p => { const b = DB[p].bye; seen.has(b) ? dupes.add(b) : seen.add(b); });
+          return [...dupes];
+        };
+        const b1 = byeConflict(team1), b2 = byeConflict(team2);
+        if (b1.length) tips.push(`Team 1 has bye-week overlap on week(s): ${b1.join(', ')}.`);
+        if (b2.length) tips.push(`Team 2 has bye-week overlap on week(s): ${b2.join(', ')}.`);
+        if (!tips.length) tips.push('Trade structure looks balanced!');
+        return tips;
+      })();
+
+      return (
+        <div ref={rootRef} className="p-4 sm:p-5 pb-6">
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-white font-black text-xl tracking-tight">
+                  PFF<span className="text-blue-500">.</span>
+                </span>
+                <span className="text-slate-400 text-sm font-medium">Trade Analyzer</span>
+              </div>
+              <p className="text-slate-500 text-xs mt-0.5">Evaluate trades with projected fantasy points</p>
+            </div>
+
+            {/* Scoring selector */}
+            <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
+              {[['ppr','PPR'],['half-ppr','½PPR'],['standard','STD']].map(([v, lbl]) => (
+                <button
+                  key={v}
+                  onClick={() => setScoring(v)}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                    scoring === v ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Suggestion banner */}
+          {hasBoth && (
+            <div className={`rounded-lg px-4 py-3 mb-5 border text-sm ${
+              isFair
+                ? 'bg-emerald-900/50 border-emerald-700 text-emerald-200'
+                : 'bg-amber-900/50 border-amber-700 text-amber-200'
+            }`}>
+              <p className="font-semibold">
+                {isFair
+                  ? '✓ Fair trade — both sides get comparable value'
+                  : diff > 0
+                    ? `⚠ Team 1 advantage by ${absDiff.toFixed(0)} pts — Team 2 gets the better deal`
+                    : `⚠ Team 2 advantage by ${absDiff.toFixed(0)} pts — Team 1 gets the better deal`}
+              </p>
+              {suggestions.map((s, i) => <p key={i} className="text-xs mt-1 opacity-80">• {s}</p>)}
+            </div>
+          )}
+
+          {/* Two team columns */}
+          <datalist id="pff-players">
+            {Object.keys(DB).map(n => <option key={n} value={n} />)}
+          </datalist>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+            <TeamPanel
+              teamNum={1}
+              accentClass="text-blue-400"
+              bgClass="bg-blue-600 hover:bg-blue-700"
+              borderClass="border-blue-800 bg-blue-950/60"
+              players={team1}
+              total={t1Total}
+              scoreOf={scoreOf}
+              onAdd={p => setTeam1([...team1, p])}
+              onRemove={i => setTeam1(team1.filter((_,j) => j !== i))}
+            />
+            <TeamPanel
+              teamNum={2}
+              accentClass="text-red-400"
+              bgClass="bg-red-600 hover:bg-red-700"
+              borderClass="border-red-900 bg-red-950/60"
+              players={team2}
+              total={t2Total}
+              scoreOf={scoreOf}
+              onAdd={p => setTeam2([...team2, p])}
+              onRemove={i => setTeam2(team2.filter((_,j) => j !== i))}
+            />
+          </div>
+
+          {/* Comparison row */}
+          {hasBoth && (
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+              <h3 className="text-slate-300 text-sm font-semibold mb-3">Trade Breakdown</h3>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="bg-slate-700/60 rounded-lg p-3 text-center">
+                  <p className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Team 1</p>
+                  <p className={`text-xl font-bold ${t1Total >= t2Total ? 'text-blue-400' : 'text-slate-300'}`}>{t1Total.toFixed(1)}</p>
+                </div>
+                <div className="bg-slate-700/60 rounded-lg p-3 text-center">
+                  <p className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Difference</p>
+                  <p className={`text-xl font-bold flex items-center justify-center gap-1 ${
+                    isFair ? 'text-emerald-400' : diff > 0 ? 'text-blue-400' : 'text-red-400'
+                  }`}>
+                    {diff >= 0 ? <IconTrendUp /> : <IconTrendDown />}
+                    {absDiff.toFixed(1)}
+                  </p>
+                </div>
+                <div className="bg-slate-700/60 rounded-lg p-3 text-center">
+                  <p className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Team 2</p>
+                  <p className={`text-xl font-bold ${t2Total >= t1Total ? 'text-red-400' : 'text-slate-300'}`}>{t2Total.toFixed(1)}</p>
+                </div>
+              </div>
+
+              {/* Value bar */}
+              <div className="flex rounded-full overflow-hidden h-2 bg-slate-700">
+                <div
+                  className="bg-blue-500 transition-all duration-700 ease-out"
+                  style={{ width: `${(t1Total / (t1Total + t2Total)) * 100}%` }}
+                />
+                <div className="bg-red-500 flex-1" />
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+                <span>Team 1</span><span>Team 2</span>
+              </div>
+            </div>
+          )}
+
+          {/* Player reference */}
+          <div className="mt-4 bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+            <p className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider mb-2">Available Players</p>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(DB).map(([name, d]) => (
+                <span key={name} className="text-[11px] bg-slate-700/70 text-slate-400 px-2 py-0.5 rounded-full border border-slate-600/50">
+                  {name} <span className="text-slate-600">({d.pos})</span>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-center text-slate-700 text-[10px] mt-4">Powered by PFF · Projections for illustrative purposes</p>
+        </div>
+      );
+    }
+
+    // ─── Mount ────────────────────────────────────────────────────────────
+    ReactDOM.createRoot(document.getElementById('root')).render(<TradeAnalyzer />);
+  </script>
+</body>
+</html>
