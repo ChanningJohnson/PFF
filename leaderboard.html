@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SportsPredict – Leaderboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box}
+    body{background:#0d1117;margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+    .scrollbar-hide::-webkit-scrollbar{display:none}
+    .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}
+    @keyframes fadeIn{from{opacity:0;transform:scale(.97) translateY(5px)}to{opacity:1;transform:scale(1) translateY(0)}}
+    @keyframes slideUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+    .fade-in{animation:fadeIn .18s ease-out}
+    .slide-up{animation:slideUp .2s ease-out}
+    .tier-bar{transition:width .6s cubic-bezier(.4,0,.2,1)}
+    .ring-me{box-shadow:0 0 0 2px #6366f1,0 0 0 4px #6366f120}
+    .clv-pos{color:#34d399}
+    .clv-neg{color:#f87171}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+/* ════════════════════════════════════════════════════════════════════
+   DATA
+════════════════════════════════════════════════════════════════════ */
+const TOTAL_USERS = 1000;
+
+const TIER_DEFS = [
+  { name:'Diamond', color:'#67e8f9', bg:'#67e8f915', pct:1,  maxRank:10,  desc:'Top 1%',      minPicks:500 },
+  { name:'Platinum',color:'#a78bfa', bg:'#a78bfa15', pct:5,  maxRank:50,  desc:'Top 5%',      minPicks:250 },
+  { name:'Gold',    color:'#fbbf24', bg:'#fbbf2415', pct:15, maxRank:150, desc:'Top 15%',     minPicks:100 },
+  { name:'Silver',  color:'#94a3b8', bg:'#94a3b815', pct:40, maxRank:400, desc:'Top 40%',     minPicks:50  },
+  { name:'Bronze',  color:'#d97706', bg:'#d9770615', pct:100,maxRank:1000,desc:'All players', minPicks:10  },
+];
+
+const SPORTS = [
+  {id:'nba',label:'NBA',icon:'🏀'},{id:'f1',label:'Formula 1',icon:'🏎'},
+  {id:'golf',label:'Golf',icon:'⛳'},{id:'mlb',label:'MLB',icon:'⚾'},
+  {id:'pickleball',label:'Pickleball',icon:'🏓'},{id:'esports',label:'E-Sports',icon:'🎮'},
+  {id:'nfl',label:'NFL',icon:'🏈'},{id:'college',label:'College Football',icon:'🏟'},
+  {id:'epl',label:'EPL',icon:'⚽'},{id:'nhl',label:'NHL',icon:'🏒'},{id:'nc',label:'NC',icon:'🏆'},
+];
+
+function getTier(rank){ return TIER_DEFS.find(t=>rank<=t.maxRank)||TIER_DEFS[TIER_DEFS.length-1]; }
+
+const ME = {
+  id:'me', rank:73, name:'sfzevi', rating:91.2, trades:189,
+  avgGain:14.8, winRate:64, todayMovement:+17, tier:getTier(73),
+  seasons:[
+    {id:1,label:'Season 1',period:'Sep–Dec 2025',tierName:'Silver',completed:true},
+    {id:2,label:'Season 2',period:'Jan–Apr 2026',tierName:'Gold',completed:false,current:true},
+  ],
+  sportRatings:{
+    nba:{rating:94.2,rank:73,pct:7.3}, nfl:{rating:89.1,rank:118,pct:11.8},
+    mlb:{rating:88.5,rank:134,pct:13.4}, golf:{rating:85.2,rank:201,pct:20.1},
+    f1:{rating:84.0,rank:224,pct:22.4}, pickleball:{rating:82.1,rank:267,pct:26.7},
+    esports:{rating:80.3,rank:301,pct:30.1}, college:{rating:79.0,rank:330,pct:33.0},
+    epl:{rating:77.4,rank:366,pct:36.6}, nhl:{rating:76.2,rank:389,pct:38.9},
+    nc:{rating:74.8,rank:412,pct:41.2},
+  },
+};
+
+/* Full immutable pick log ----------------------------------------- */
+const PICK_LOG = [
+  // NBA picks
+  {id:'p1', date:'2026-05-17',submittedAt:'2026-05-17T14:23:11Z',sport:'nba',event:'Lakers vs Warriors',  market:'Spread',pick:'Lakers -3.5',   openLine:-3,  pickedLine:-3.5, closingLine:-4.5, odds:-110, outcome:'win',  ratingDelta:+2.1, clv:+1.0, lineMovedWith:true, locked:true,  settlementAt:'2026-05-17T22:45:00Z'},
+  {id:'p2', date:'2026-05-16',submittedAt:'2026-05-16T11:05:33Z',sport:'nba',event:'Celtics vs Heat',     market:'Total', pick:'Over 214.5',    openLine:213, pickedLine:214.5,closingLine:216,  odds:-110, outcome:'loss', ratingDelta:-1.8, clv:-1.5, lineMovedWith:false,locked:true,  settlementAt:'2026-05-16T23:10:00Z'},
+  {id:'p3', date:'2026-05-16',submittedAt:'2026-05-16T09:44:20Z',sport:'nba',event:'Nuggets vs Mavs',     market:'ML',    pick:'Nuggets -150',  openLine:-140,pickedLine:-150, closingLine:-155, odds:-150, outcome:'win',  ratingDelta:+1.5, clv:+0.5, lineMovedWith:true, locked:true,  settlementAt:'2026-05-16T21:30:00Z'},
+  {id:'p4', date:'2026-05-15',submittedAt:'2026-05-15T16:12:44Z',sport:'nba',event:'Bulls vs Pistons',    market:'Spread',pick:'Bulls +5',       openLine:5.5, pickedLine:5,    closingLine:4.5,  odds:-110, outcome:'win',  ratingDelta:+1.2, clv:-0.5, lineMovedWith:false,locked:true,  settlementAt:'2026-05-15T22:00:00Z'},
+  {id:'p5', date:'2026-05-15',submittedAt:'2026-05-15T10:30:00Z',sport:'nba',event:'Suns vs Kings',       market:'Total', pick:'Under 228',     openLine:229, pickedLine:228,  closingLine:226,  odds:-110, outcome:'loss', ratingDelta:-1.4, clv:-2.0, lineMovedWith:false,locked:true,  settlementAt:'2026-05-15T22:45:00Z'},
+  {id:'p6', date:'2026-05-14',submittedAt:'2026-05-14T13:55:19Z',sport:'nba',event:'Bucks vs Sixers',     market:'Spread',pick:'Bucks -6',       openLine:-5.5,pickedLine:-6,   closingLine:-7,   odds:-110, outcome:'win',  ratingDelta:+2.3, clv:+1.0, lineMovedWith:true, locked:true,  settlementAt:'2026-05-14T22:15:00Z'},
+  {id:'p7', date:'2026-05-13',submittedAt:'2026-05-13T08:22:05Z',sport:'nba',event:'Clippers vs Thunder', market:'ML',    pick:'Thunder +130',  openLine:140, pickedLine:130,  closingLine:115,  odds:+130, outcome:'win',  ratingDelta:+3.1, clv:-1.5, lineMovedWith:false,locked:true,  settlementAt:'2026-05-13T23:00:00Z'},
+  {id:'p8', date:'2026-05-13',submittedAt:'2026-05-13T12:10:48Z',sport:'nba',event:'Nets vs Raptors',     market:'Spread',pick:'Raptors +8.5',  openLine:8,   pickedLine:8.5,  closingLine:9.5,  odds:-110, outcome:'loss', ratingDelta:-1.2, clv:+1.0, lineMovedWith:true, locked:true,  settlementAt:'2026-05-13T21:30:00Z'},
+  {id:'p9', date:'2026-05-12',submittedAt:'2026-05-12T15:30:00Z',sport:'nba',event:'Heat vs Pacers',      market:'Spread',pick:'Pacers -4',      openLine:-3.5,pickedLine:-4,   closingLine:-5,   odds:-110, outcome:'win',  ratingDelta:+2.0, clv:+1.0, lineMovedWith:true, locked:true,  settlementAt:'2026-05-12T22:30:00Z'},
+  {id:'p10',date:'2026-05-11',submittedAt:'2026-05-11T08:45:22Z',sport:'nba',event:'Knicks vs Wizards',   market:'Total', pick:'Over 220',      openLine:219, pickedLine:220,  closingLine:221.5,odds:-110, outcome:'loss', ratingDelta:-1.6, clv:+1.5, lineMovedWith:true, locked:true,  settlementAt:'2026-05-11T22:00:00Z'},
+  {id:'p11',date:'2026-05-09',submittedAt:'2026-05-09T14:10:33Z',sport:'nba',event:'Spurs vs Hornets',    market:'ML',    pick:'Hornets +175',  openLine:185, pickedLine:175,  closingLine:160,  odds:+175, outcome:'loss', ratingDelta:-0.9, clv:-1.5, lineMovedWith:false,locked:true,  settlementAt:'2026-05-09T21:45:00Z'},
+  {id:'p12',date:'2026-05-08',submittedAt:'2026-05-08T09:22:11Z',sport:'nba',event:'Jazz vs OKC',         market:'Spread',pick:'OKC -8',         openLine:-7.5,pickedLine:-8,   closingLine:-9,   odds:-110, outcome:'win',  ratingDelta:+2.2, clv:+1.0, lineMovedWith:true, locked:true,  settlementAt:'2026-05-08T22:00:00Z'},
+  {id:'p13',date:'2026-05-07',submittedAt:'2026-05-07T10:05:44Z',sport:'nba',event:'Cavs vs Bucks',       market:'Total', pick:'Under 224',     openLine:225, pickedLine:224,  closingLine:222.5,odds:-110, outcome:'win',  ratingDelta:+1.7, clv:-1.5, lineMovedWith:false,locked:true,  settlementAt:'2026-05-07T22:30:00Z'},
+  // NFL
+  {id:'p14',date:'2026-05-10',submittedAt:'2026-05-10T09:00:00Z',sport:'nfl',event:'Chiefs vs Cowboys',   market:'Spread',pick:'Chiefs -3',      openLine:-2.5,pickedLine:-3,   closingLine:-4,   odds:-110, outcome:'win',  ratingDelta:+1.8, clv:+1.0, lineMovedWith:true, locked:true,  settlementAt:'2026-05-10T20:00:00Z'},
+  {id:'p15',date:'2026-05-10',submittedAt:'2026-05-10T10:15:22Z',sport:'nfl',event:'Eagles vs Giants',    market:'Total', pick:'Under 44',      openLine:45,  pickedLine:44,   closingLine:43.5, odds:-110, outcome:'win',  ratingDelta:+1.6, clv:-0.5, lineMovedWith:false,locked:true,  settlementAt:'2026-05-10T20:30:00Z'},
+  {id:'p16',date:'2026-05-03',submittedAt:'2026-05-03T14:30:11Z',sport:'nfl',event:'Bills vs Dolphins',   market:'ML',    pick:'Bills -200',    openLine:-195,pickedLine:-200, closingLine:-210, odds:-200, outcome:'loss', ratingDelta:-1.0, clv:+1.0, lineMovedWith:true, locked:true,  settlementAt:'2026-05-03T20:00:00Z'},
+  {id:'p17',date:'2026-04-27',submittedAt:'2026-04-27T11:45:33Z',sport:'nfl',event:'Packers vs Bears',    market:'Spread',pick:'Bears +7',       openLine:7.5, pickedLine:7,    closingLine:6,    odds:-110, outcome:'loss', ratingDelta:-1.5, clv:-1.0, lineMovedWith:false,locked:true,  settlementAt:'2026-04-27T20:00:00Z'},
+  // MLB
+  {id:'p18',date:'2026-05-08',submittedAt:'2026-05-08T12:00:00Z',sport:'mlb',event:'Yankees vs Red Sox',  market:'ML',    pick:'Yankees -120',  openLine:-115,pickedLine:-120, closingLine:-130, odds:-120, outcome:'win',  ratingDelta:+1.4, clv:+1.0, lineMovedWith:true, locked:true,  settlementAt:'2026-05-08T19:30:00Z'},
+  {id:'p19',date:'2026-05-07',submittedAt:'2026-05-07T13:20:55Z',sport:'mlb',event:'Dodgers vs Padres',   market:'Total', pick:'Under 8.5',     openLine:9,   pickedLine:8.5,  closingLine:8,    odds:-110, outcome:'push', ratingDelta:0,    clv:-0.5, lineMovedWith:false,locked:true,  settlementAt:'2026-05-07T22:00:00Z'},
+  {id:'p20',date:'2026-05-06',submittedAt:'2026-05-06T11:05:00Z',sport:'mlb',event:'Cubs vs Cardinals',   market:'Spread',pick:'Cardinals +1.5', openLine:1.5, pickedLine:1.5,  closingLine:2,    odds:-115, outcome:'win',  ratingDelta:+1.3, clv:+0.5, lineMovedWith:true, locked:true,  settlementAt:'2026-05-06T20:10:00Z'},
+  // Pending
+  {id:'p21',date:'2026-05-18',submittedAt:'2026-05-18T11:30:00Z',sport:'nba',event:'Lakers vs Clippers',  market:'Spread',pick:'Lakers -2.5',   openLine:-2,  pickedLine:-2.5, closingLine:null, odds:-110, outcome:'pending',ratingDelta:null,clv:null,lineMovedWith:null,locked:false,settlementAt:null},
+  {id:'p22',date:'2026-05-18',submittedAt:'2026-05-18T12:15:00Z',sport:'nba',event:'Celtics vs Knicks',   market:'ML',    pick:'Celtics -180',  openLine:-175,pickedLine:-180, closingLine:null, odds:-180, outcome:'pending',ratingDelta:null,clv:null,lineMovedWith:null,locked:false,settlementAt:null},
+];
+
+/* Players --------------------------------------------------------- */
+function buildPlayers(raw){ return raw.map(p=>({...p,tier:getTier(p.rank)})); }
+
+const PLAYERS_BY_SPORT = {
+  nba: buildPlayers([
+    {id:1,rank:1,name:'Sid Kali',rating:100,trades:412,avgGain:18.3,winRate:71,todayMovement:0},
+    {id:2,rank:2,name:'sfzevi',rating:100,trades:389,avgGain:17.8,winRate:70,todayMovement:+1},
+    {id:3,rank:3,name:'@elig',rating:99,trades:201,avgGain:16.2,winRate:68,todayMovement:-1},
+    {id:4,rank:4,name:'Peter V',rating:99,trades:266,avgGain:14.1,winRate:66,todayMovement:0},
+    {id:5,rank:5,name:'HideOnBush32',rating:98,trades:178,avgGain:15.9,winRate:65,todayMovement:+2},
+    {id:6,rank:6,name:'Teutonia World',rating:98,trades:143,avgGain:13.7,winRate:64,todayMovement:0},
+    {id:7,rank:7,name:'JohnKane',rating:97,trades:30,avgGain:16.7,winRate:67,todayMovement:+3},
+    {id:8,rank:8,name:'Kevin Fenter',rating:97,trades:88,avgGain:12.4,winRate:63,todayMovement:-2},
+    {id:9,rank:9,name:'staggo',rating:96,trades:55,avgGain:11.8,winRate:62,todayMovement:+1},
+    {id:10,rank:10,name:'jkano',rating:96,trades:72,avgGain:12.1,winRate:61,todayMovement:0},
+    {id:11,rank:11,name:'Trueno',rating:96,trades:44,avgGain:10.9,winRate:60,todayMovement:-1},
+    {id:12,rank:12,name:'AlphaWave',rating:95,trades:91,avgGain:11.2,winRate:59,todayMovement:+2},
+  ]),
+  nfl: buildPlayers([
+    {id:1,rank:1,name:'GridironGuru',rating:100,trades:340,avgGain:19.1,winRate:72,todayMovement:0},
+    {id:2,rank:2,name:'BlitzKing',rating:99,trades:280,avgGain:17.5,winRate:69,todayMovement:+1},
+    {id:3,rank:3,name:'RedZonePro',rating:98,trades:215,avgGain:15.8,winRate:67,todayMovement:-1},
+    {id:4,rank:4,name:'FourthDown',rating:97,trades:188,avgGain:14.2,winRate:65,todayMovement:+2},
+    {id:5,rank:5,name:'TackleBox',rating:96,trades:155,avgGain:13.1,winRate:63,todayMovement:0},
+    {id:6,rank:6,name:'SnapCount',rating:95,trades:132,avgGain:12.7,winRate:62,todayMovement:-1},
+  ]),
+  mlb: buildPlayers([
+    {id:1,rank:1,name:'DiamondDave',rating:100,trades:520,avgGain:16.4,winRate:69,todayMovement:0},
+    {id:2,rank:2,name:'SluggerX',rating:99,trades:445,avgGain:15.2,winRate:67,todayMovement:+1},
+    {id:3,rank:3,name:'CurveballKing',rating:98,trades:380,avgGain:14.1,winRate:65,todayMovement:-1},
+    {id:4,rank:4,name:'PinchHitter',rating:97,trades:290,avgGain:13.5,winRate:64,todayMovement:0},
+    {id:5,rank:5,name:'DoublePlay',rating:96,trades:210,avgGain:12.8,winRate:62,todayMovement:+2},
+  ]),
+};
+['f1','golf','pickleball','esports','college','epl','nhl','nc'].forEach(s=>{
+  PLAYERS_BY_SPORT[s]=buildPlayers([
+    {id:1,rank:1,name:'TopPredictor',rating:100,trades:300,avgGain:17.5,winRate:70,todayMovement:0},
+    {id:2,rank:2,name:'SharpEdge',rating:99,trades:250,avgGain:15.8,winRate:68,todayMovement:+1},
+    {id:3,rank:3,name:'DataDriven',rating:98,trades:200,avgGain:14.2,winRate:66,todayMovement:-1},
+    {id:4,rank:4,name:'WinStreaker',rating:97,trades:160,avgGain:13.5,winRate:64,todayMovement:+2},
+    {id:5,rank:5,name:'ConsistentK',rating:96,trades:140,avgGain:12.9,winRate:63,todayMovement:0},
+  ]);
+});
+
+const NEARBY = [
+  {id:'n71',rank:71,name:'QuickDraw',rating:91.5,trades:102,avgGain:13.1,winRate:62,todayMovement:+2,tier:getTier(71)},
+  {id:'n72',rank:72,name:'BetSmart',rating:91.3,trades:88,avgGain:12.9,winRate:61,todayMovement:0,tier:getTier(72)},
+  {id:'n74',rank:74,name:'FadeThePublic',rating:91.0,trades:144,avgGain:12.5,winRate:60,todayMovement:-1,tier:getTier(74)},
+  {id:'n75',rank:75,name:'ValueSeeker',rating:90.8,trades:77,avgGain:12.2,winRate:59,todayMovement:+3,tier:getTier(75)},
+];
+
+const TODAY_GAMES = [
+  {id:'g1',label:'Lakers vs Clippers',sport:'nba',markets:['Spread','Total','ML']},
+  {id:'g2',label:'Celtics vs Knicks',sport:'nba',markets:['Spread','Total','ML']},
+  {id:'g3',label:'Chiefs vs Cowboys',sport:'nfl',markets:['Spread','Total','ML']},
+  {id:'g4',label:'Yankees vs Red Sox',sport:'mlb',markets:['Spread','Total','ML']},
+];
+
+/* ════════════════════════════════════════════════════════════════════
+   HELPERS & COMPUTED STATS
+════════════════════════════════════════════════════════════════════ */
+function initials(n){ return n.replace(/^@/,'').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
+function avatarGrad(n){
+  const g=['from-indigo-500 to-purple-600','from-blue-500 to-cyan-600','from-violet-500 to-fuchsia-600','from-sky-500 to-indigo-600','from-purple-500 to-pink-600'];
+  let h=0; for(let c of n) h=(h*31+c.charCodeAt(0))&0xffffffff;
+  return g[Math.abs(h)%g.length];
+}
+function pct(rank){ return ((rank/TOTAL_USERS)*100).toFixed(1); }
+function tierProgress(rank){
+  const cur=getTier(rank); const curIdx=TIER_DEFS.findIndex(t=>t.name===cur.name);
+  if(curIdx===0) return {pct:100,cur,next:null};
+  const prev=TIER_DEFS[curIdx-1];
+  const floor=TIER_DEFS[curIdx].maxRank; const ceil=prev.maxRank;
+  const progress=Math.max(0,Math.min(1,1-(rank-ceil-1)/(floor-ceil)));
+  return {pct:Math.round(progress*100),cur,next:prev};
+}
+function spotsToNext(rank){ const n=TIER_DEFS.find(t=>t.maxRank<rank); return n?{tier:n,spots:rank-n.maxRank}:null; }
+function fmtOdds(o){ return o>0?`+${o}`:String(o); }
+function fmtLine(l){ if(l===null||l===undefined) return '—'; return l>0?`+${l}`:String(l); }
+
+function computeStats(picks){
+  const settled=picks.filter(p=>p.outcome!=='pending');
+  const wins=settled.filter(p=>p.outcome==='win').length;
+  const losses=settled.filter(p=>p.outcome==='loss').length;
+  const pushes=settled.filter(p=>p.outcome==='push').length;
+  const total=wins+losses;
+  const winRate=total>0?Math.round(wins/total*100):0;
+  const avgCLV=settled.length>0?(settled.reduce((s,p)=>s+(p.clv||0),0)/settled.length).toFixed(2):0;
+  const beatMkt=settled.length>0?Math.round(settled.filter(p=>p.clv>0).length/settled.length*100):0;
+  const lineWithUs=settled.length>0?Math.round(settled.filter(p=>p.lineMovedWith).length/settled.length*100):0;
+  const ratingGain=settled.reduce((s,p)=>s+(p.ratingDelta||0),0).toFixed(1);
+  return {wins,losses,pushes,total:settled.length,winRate,avgCLV,beatMkt,lineWithUs,ratingGain};
+}
+
+function computeSplits(picks,key,values){
+  return values.map(val=>{
+    const sub=picks.filter(p=>p[key]===val&&p.outcome!=='pending');
+    const w=sub.filter(p=>p.outcome==='win').length;
+    const l=sub.filter(p=>p.outcome==='loss').length;
+    const push=sub.filter(p=>p.outcome==='push').length;
+    const clv=sub.length>0?(sub.reduce((s,p)=>s+(p.clv||0),0)/sub.length).toFixed(2):null;
+    const wr=w+l>0?Math.round(w/(w+l)*100):null;
+    return {val,w,l,push,n:sub.length,wr,clv:clv!==null?parseFloat(clv):null};
+  }).filter(r=>r.n>0);
+}
+
+/* Credibility badges */
+function computeBadges(picksCount, stats){
+  const badges=[];
+  if(picksCount>=10)  badges.push({key:'b10',  label:'10+ Picks',  icon:'📋', desc:'First step onto the record'});
+  if(picksCount>=50)  badges.push({key:'b50',  label:'50+ Picks',  icon:'📊', desc:'Building a real sample'});
+  if(picksCount>=100) badges.push({key:'b100', label:'100+ Picks', icon:'🔢', desc:'Minimum for tier ranking'});
+  if(picksCount>=250) badges.push({key:'b250', label:'250+ Picks', icon:'📈', desc:'Statistically meaningful'});
+  if(picksCount>=500) badges.push({key:'b500', label:'500+ Picks', icon:'🏛', desc:'Deep long-run sample'});
+  if(stats.beatMkt>=55) badges.push({key:'clv', label:'Positive CLV', icon:'📡', desc:'Beating the market long-run'});
+  if(stats.winRate>=60 && stats.total>=50) badges.push({key:'wr60', label:'60%+ Win Rate', icon:'🎯', desc:'Consistent winner'});
+  badges.push({key:'lock', label:'Verified Record', icon:'🔒', desc:'All picks timestamped & locked'});
+  return badges;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SHARED UI
+════════════════════════════════════════════════════════════════════ */
+function Avatar({name,size='md',isMe=false}){
+  const sz={sm:'w-9 h-9 text-xs',md:'w-10 h-10 text-sm',lg:'w-14 h-14 text-base',xl:'w-16 h-16 text-lg'}[size];
+  const g=isMe?'from-indigo-500 to-indigo-700':avatarGrad(name);
+  return <div className={`${sz} rounded-full bg-gradient-to-br ${g} flex items-center justify-center font-bold text-white flex-shrink-0 ${isMe?'ring-me':''}`}>{isMe?'★':initials(name)}</div>;
+}
+
+function SmartBadge({rating,size='sm'}){
+  const s=size==='lg'?{l:'text-[10px]',sub:'text-[6.5px]',n:'text-2xl'}:{l:'text-[8px]',sub:'text-[5.5px]',n:'text-base'};
+  return <div className="flex items-center gap-1.5 flex-shrink-0">
+    <div className="flex flex-col leading-none">
+      <span className={`font-black text-white ${s.l}`} style={{letterSpacing:'0.14em'}}>SMART</span>
+      <span className={`font-semibold text-slate-400 ${s.sub}`} style={{letterSpacing:'0.08em'}}>RATING SYSTEM</span>
+    </div>
+    <span className={`text-white font-black ${s.n}`}>{rating}</span>
+  </div>;
+}
+
+function TierPill({tierName,small=false}){
+  const def=TIER_DEFS.find(t=>t.name===tierName)||TIER_DEFS[TIER_DEFS.length-1];
+  const cls=small?'text-[9px] px-1.5 py-0.5':'text-xs px-2 py-0.5';
+  return <span className={`rounded font-bold ${cls}`} style={{color:def.color,background:def.bg,border:`1px solid ${def.color}40`}}>{tierName}</span>;
+}
+
+function MovTag({n}){
+  if(!n||n===0) return <span className="text-slate-600 text-xs">—</span>;
+  return <span className={`text-xs font-semibold ${n>0?'text-emerald-400':'text-rose-400'}`}>{n>0?'↑':'↓'}{Math.abs(n)}</span>;
+}
+
+function LockIcon({locked}){
+  return locked
+    ? <span title="Immutable – locked at event start" className="text-emerald-400 text-xs" style={{fontSize:'11px'}}>🔒</span>
+    : <span title="Pending – locks at game time" className="text-amber-400 text-xs" style={{fontSize:'11px'}}>⏳</span>;
+}
+
+function OutcomePill({outcome}){
+  const cfg={win:{bg:'bg-emerald-500/15',text:'text-emerald-400',label:'W'},loss:{bg:'bg-rose-500/15',text:'text-rose-400',label:'L'},push:{bg:'bg-slate-700',text:'text-slate-300',label:'P'},pending:{bg:'bg-amber-500/10',text:'text-amber-400',label:'Pending'}};
+  const c=cfg[outcome]||cfg.pending;
+  return <span className={`${c.bg} ${c.text} text-[10px] font-bold px-2 py-0.5 rounded-full`}>{c.label}</span>;
+}
+
+function CLVTag({clv}){
+  if(clv===null||clv===undefined) return <span className="text-slate-600 text-xs">—</span>;
+  const pos=clv>0;
+  return <span className={`text-xs font-bold ${pos?'text-emerald-400':'clv-neg'}`}>{pos?'+':''}{clv.toFixed(1)}</span>;
+}
+
+function SectionHeader({title,sub}){
+  return <div className="mb-4">
+    <h3 className="text-white font-black text-base">{title}</h3>
+    {sub&&<p className="text-slate-400 text-xs mt-0.5">{sub}</p>}
+  </div>;
+}
+
+function StatBlock({label,value,sub,accent}){
+  return <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+    <p className="text-slate-400 text-[10px] font-semibold tracking-wider uppercase mb-1">{label}</p>
+    <p className={`font-black text-2xl ${accent||'text-white'}`}>{value}</p>
+    {sub&&<p className="text-slate-500 text-[10px] mt-0.5">{sub}</p>}
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PODIUM + LEADERBOARD ROW
+════════════════════════════════════════════════════════════════════ */
+function PodiumCard({player,pos,onSelect}){
+  const cfg={1:{ring:'ring-yellow-400/40',bg:'from-indigo-900/80 to-indigo-950',badge:'text-yellow-400',sz:'xl',up:true},2:{ring:'ring-slate-500/30',bg:'from-slate-800/60 to-slate-900',badge:'text-slate-300',sz:'lg',up:false},3:{ring:'ring-amber-700/30',bg:'from-slate-800/60 to-slate-900',badge:'text-amber-500',sz:'lg',up:false}}[pos];
+  return <button onClick={()=>onSelect(player)} className={`flex flex-col items-center gap-2 p-4 rounded-2xl border ring-1 ${cfg.ring} bg-gradient-to-b ${cfg.bg} hover:scale-105 transition-transform w-full ${cfg.up?'py-6':'py-4'}`}>
+    {pos===1
+      ? <svg className="w-7 h-7 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 002.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 012.916.52 6.003 6.003 0 01-5.395 4.972m0 0a6.726 6.726 0 01-2.749 1.35m0 0a6.772 6.772 0 01-3.044 0"/></svg>
+      : <svg className={`w-6 h-6 ${cfg.badge}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/></svg>
+    }
+    <span className={`text-sm font-bold ${cfg.badge}`}>#{pos}</span>
+    <Avatar name={player.name} size={cfg.sz}/>
+    <div className="text-center">
+      <p className="text-white font-bold text-sm leading-tight">{player.name}</p>
+      <p className={`font-black text-xl ${cfg.badge}`}>{player.rating}</p>
+    </div>
+  </button>;
+}
+
+function LBRow({player,onSelect,highlight=false}){
+  const rc={1:'text-yellow-400',2:'text-indigo-400',3:'text-indigo-400'}[player.rank]||'text-slate-500';
+  return <button onClick={()=>onSelect(player)} className={`w-full flex items-center gap-3 px-4 py-3 border-b border-slate-800/60 last:border-0 text-left group transition-colors ${highlight?'bg-indigo-950/60 hover:bg-indigo-950/80':'hover:bg-white/5'}`}>
+    <span className={`w-5 text-center font-bold text-sm flex-shrink-0 ${rc}`}>{player.rank}</span>
+    <Avatar name={player.name} size="sm" isMe={highlight}/>
+    <span className="flex-1 min-w-0 text-sm font-semibold truncate group-hover:text-indigo-300 transition-colors text-white">
+      {player.name}{highlight&&<span className="ml-1 text-indigo-400 text-[10px] font-bold">YOU</span>}
+    </span>
+    <TierPill tierName={player.tier.name} small/>
+    <MovTag n={player.todayMovement}/>
+    <SmartBadge rating={player.rating}/>
+  </button>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   VIEW: GLOBAL
+════════════════════════════════════════════════════════════════════ */
+function GlobalView({sport,players,onSelect}){
+  const top3=players.slice(0,3); const half=Math.ceil(players.length/2);
+  return <div className="slide-up">
+    {top3.length===3&&<div className="flex items-end justify-center gap-3 mb-8">
+      <div className="flex-1 max-w-[175px]"><PodiumCard player={top3[1]} pos={2} onSelect={onSelect}/></div>
+      <div className="flex-1 max-w-[200px] -translate-y-5"><PodiumCard player={top3[0]} pos={1} onSelect={onSelect}/></div>
+      <div className="flex-1 max-w-[175px]"><PodiumCard player={top3[2]} pos={3} onSelect={onSelect}/></div>
+    </div>}
+    <div className="rounded-2xl border border-slate-800/80 overflow-hidden bg-slate-900/40">
+      <div className="flex items-center gap-3 px-4 py-3 bg-slate-800/40 border-b border-slate-800/80">
+        <span className="w-5 text-slate-500 text-[10px] font-semibold tracking-wider uppercase">Rk</span>
+        <span className="flex-1 pl-11 text-slate-500 text-[10px] font-semibold tracking-wider uppercase">Player</span>
+        <span className="text-slate-500 text-[10px] font-semibold uppercase mr-4 hidden sm:block">Today</span>
+        <div className="flex flex-col leading-none"><span className="font-black text-slate-400 text-[8px]" style={{letterSpacing:'0.14em'}}>SMART</span><span className="font-semibold text-slate-500 text-[5.5px]" style={{letterSpacing:'0.08em'}}>RATING SYSTEM</span></div>
+      </div>
+      <div className="hidden sm:grid sm:grid-cols-2 sm:divide-x sm:divide-slate-800/60">
+        <div>{players.slice(0,half).map(p=><LBRow key={p.id} player={p} onSelect={onSelect} highlight={p.name===ME.name}/>)}</div>
+        <div>{players.slice(half).map(p=><LBRow key={p.id} player={p} onSelect={onSelect} highlight={p.name===ME.name}/>)}</div>
+      </div>
+      <div className="sm:hidden">{players.map(p=><LBRow key={p.id} player={p} onSelect={onSelect} highlight={p.name===ME.name}/>)}</div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   VIEW: NEAR ME
+════════════════════════════════════════════════════════════════════ */
+function NearMeView({sport,onSelect}){
+  const prog=tierProgress(ME.rank); const nextTier=spotsToNext(ME.rank);
+  const meRow={id:'me',rank:73,name:ME.name,rating:ME.rating,trades:ME.trades,avgGain:ME.avgGain,winRate:ME.winRate,todayMovement:ME.todayMovement,tier:ME.tier,isMe:true};
+  const strip=[NEARBY[0],NEARBY[1],meRow,NEARBY[2],NEARBY[3]];
+  return <div className="space-y-6 slide-up">
+    {/* Nearby strip */}
+    <div>
+      <SectionHeader title="Nearby Competitors" sub="2 above and 2 below your current rank"/>
+      <div className="rounded-2xl border border-slate-800 overflow-hidden bg-slate-900/40">
+        {strip.map(p=><button key={p.id} onClick={()=>onSelect(p)} className={`w-full flex items-center gap-3 px-4 py-3.5 border-b border-slate-800/60 last:border-0 text-left group transition-colors ${p.isMe?'bg-indigo-950/50 ring-1 ring-inset ring-indigo-700/40':'hover:bg-white/5'}`}>
+          <span className="w-5 text-center font-bold text-sm flex-shrink-0 text-slate-400">{p.rank}</span>
+          <Avatar name={p.name} size="sm" isMe={!!p.isMe}/>
+          <span className="flex-1 min-w-0 text-sm font-semibold truncate text-white">
+            {p.name}{p.isMe&&<span className="ml-1.5 text-indigo-400 text-[10px] font-bold bg-indigo-500/10 px-1.5 py-0.5 rounded">YOU</span>}
+          </span>
+          <TierPill tierName={p.tier.name} small/>
+          <MovTag n={p.todayMovement}/>
+          <SmartBadge rating={p.rating}/>
+        </button>)}
+      </div>
+    </div>
+    {/* Tier progress */}
+    {prog.next&&<div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+      <div className="flex justify-between mb-1.5">
+        <span className="text-xs font-semibold" style={{color:prog.cur.color}}>{prog.cur.name}</span>
+        <span className="text-xs font-semibold" style={{color:prog.next.color}}>{prog.next.name}</span>
+      </div>
+      <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden mb-2">
+        <div className="h-full rounded-full tier-bar" style={{width:`${prog.pct}%`,background:`linear-gradient(90deg,${prog.cur.color}80,${prog.next.color})`}}/>
+      </div>
+      <div className="flex justify-between text-xs text-slate-400">
+        <span>#{ME.rank} current</span>
+        {nextTier&&<span className="font-semibold"><span style={{color:prog.next.color}}>{nextTier.spots} spots</span> to {prog.next.name} · #{prog.next.maxRank}</span>}
+      </div>
+    </div>}
+    {/* Tier ladder */}
+    <div>
+      <SectionHeader title="Tier Ladder" sub="Minimum picks required before ranking eligibility"/>
+      <div className="space-y-2">
+        {TIER_DEFS.map((tier,i)=>{
+          const isMe=ME.tier.name===tier.name; const above=TIER_DEFS.findIndex(t=>t.name===ME.tier.name)>i;
+          return <div key={tier.name} className={`flex items-center gap-3 p-3 rounded-xl border ${isMe?'border-indigo-700/60 bg-indigo-950/40':above?'border-slate-700/30 bg-slate-800/20 opacity-50':'border-slate-800/60 bg-slate-900/40'}`}>
+            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:tier.color}}/>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold" style={{color:tier.color}}>{tier.name}</span>
+                {isMe&&<span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded">YOU ARE HERE</span>}
+                {above&&<span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">✓ ACHIEVED</span>}
+              </div>
+              <p className="text-slate-500 text-[11px]">Rank #{i>0?TIER_DEFS[i-1].maxRank+1:1}–{tier.maxRank} · {tier.desc} · {tier.minPicks}+ picks required</p>
+            </div>
+            <span className="text-slate-400 text-xs font-semibold flex-shrink-0">Top {tier.pct}%</span>
+          </div>;
+        })}
+      </div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   VIEW: MY RECORD
+════════════════════════════════════════════════════════════════════ */
+function LogPickPanel({onLogged}){
+  const [game,setGame]=useState(''); const [market,setMarket]=useState('');
+  const [pick,setPick]=useState(''); const [line,setLine]=useState(''); const [odds,setOdds]=useState('');
+  const [done,setDone]=useState(false);
+  const sg=TODAY_GAMES.find(g=>g.id===game);
+  const sel='w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 transition-colors';
+  function submit(e){
+    e.preventDefault(); if(!game||!market||!pick.trim()) return;
+    setDone(true); setTimeout(()=>{setDone(false);setGame('');setMarket('');setPick('');setLine('');setOdds('');if(onLogged)onLogged();},3500);
+  }
+  return <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+    <div className="flex items-center gap-2 mb-1"><span className="text-indigo-400">⚡</span><h3 className="text-white font-bold text-sm">Log a Pick</h3></div>
+    <p className="text-slate-500 text-xs mb-4">Pick is timestamped on submission and locked immutably at event start. No edits after lock.</p>
+    {done
+      ? <div className="flex flex-col items-center py-5 gap-2 fade-in">
+          <span className="text-3xl">🔒</span>
+          <p className="text-white font-bold">Pick logged & timestamped</p>
+          <p className="text-slate-400 text-sm">Locked at game time. Expected SMART impact: <span className="text-emerald-400 font-bold">+~1.8</span></p>
+        </div>
+      : <form onSubmit={submit} className="space-y-2.5">
+          <select value={game} onChange={e=>{setGame(e.target.value);setMarket('');}} className={sel}>
+            <option value="">Select today's game…</option>
+            {TODAY_GAMES.map(g=><option key={g.id} value={g.id}>{g.label}</option>)}
+          </select>
+          {sg&&<select value={market} onChange={e=>setMarket(e.target.value)} className={sel}>
+            <option value="">Market…</option>
+            {sg.markets.map(m=><option key={m} value={m}>{m}</option>)}
+          </select>}
+          {market&&<>
+            <input value={pick} onChange={e=>setPick(e.target.value)} placeholder={market==='Spread'?'e.g. Lakers -3.5':market==='Total'?'e.g. Over 214.5':'e.g. Lakers ML'} className={sel}/>
+            <div className="grid grid-cols-2 gap-2">
+              <input value={line} onChange={e=>setLine(e.target.value)} placeholder="Line (e.g. -3.5)" className={sel}/>
+              <input value={odds} onChange={e=>setOdds(e.target.value)} placeholder="Odds (e.g. -110)" className={sel}/>
+            </div>
+          </>}
+          <button type="submit" disabled={!game||!market||!pick.trim()} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors">
+            Log Pick — Immutable at Lock 🔒
+          </button>
+        </form>}
+  </div>;
+}
+
+function MyRecordView({onSharePick}){
+  const [sportF,setSportF]=useState('all');
+  const [mktF,setMktF]=useState('all');
+  const [outcomeF,setOutcomeF]=useState('all');
+  const [search,setSearch]=useState('');
+  const [showLog,setShowLog]=useState(false);
+  const [showImport,setShowImport]=useState(false);
+
+  const filtered=useMemo(()=>PICK_LOG.filter(p=>{
+    if(sportF!=='all'&&p.sport!==sportF) return false;
+    if(mktF!=='all'&&p.market!==mktF) return false;
+    if(outcomeF!=='all'&&p.outcome!==outcomeF) return false;
+    if(search&&!p.event.toLowerCase().includes(search.toLowerCase())&&!p.pick.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }),[sportF,mktF,outcomeF,search]);
+
+  const stats=useMemo(()=>computeStats(PICK_LOG),[]);
+  const pending=PICK_LOG.filter(p=>p.outcome==='pending').length;
+
+  const FBtn=({active,onClick,children})=><button onClick={onClick} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${active?'bg-indigo-600 text-white':'bg-slate-800 text-slate-400 hover:text-white'}`}>{children}</button>;
+
+  return <div className="space-y-6 slide-up">
+    {/* Immutability notice */}
+    <div className="flex items-start gap-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4">
+      <span className="text-lg flex-shrink-0">🔒</span>
+      <div>
+        <p className="text-emerald-400 font-bold text-sm">Immutable Pick Record</p>
+        <p className="text-slate-400 text-xs mt-0.5">Every pick is timestamped on submission. Picks lock automatically at event start — no edits, deletions, or additions are permitted after lock. This is your unalterable public record.</p>
+      </div>
+    </div>
+
+    {/* Summary stats */}
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <StatBlock label="Record" value={`${stats.wins}W–${stats.losses}L${stats.pushes?'–'+stats.pushes+'P':''}`} sub={`${stats.total} settled · ${pending} pending`}/>
+      <StatBlock label="Win Rate" value={`${stats.winRate}%`} sub="Excl. pushes" accent={stats.winRate>=60?'text-emerald-400':'text-white'}/>
+      <StatBlock label="Avg CLV" value={`${stats.avgCLV>0?'+':''}${stats.avgCLV}`} sub="vs closing line" accent={parseFloat(stats.avgCLV)>0?'text-emerald-400':'clv-neg'}/>
+      <StatBlock label="Beat Market" value={`${stats.beatMkt}%`} sub="Picks with +CLV" accent={stats.beatMkt>=55?'text-emerald-400':'text-white'}/>
+    </div>
+
+    {/* Log a pick + import row */}
+    <div className="flex flex-wrap gap-2">
+      <button onClick={()=>{setShowLog(!showLog);setShowImport(false);}} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-colors">
+        <span>{showLog?'–':'+'}</span> {showLog?'Hide Log Panel':'Log a New Pick'}
+      </button>
+      <button onClick={()=>{setShowImport(!showImport);setShowLog(false);}} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-700 hover:border-indigo-600 text-slate-400 hover:text-white text-sm font-semibold transition-colors">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+        Import CSV
+      </button>
+    </div>
+    {showLog&&<LogPickPanel onLogged={()=>setShowLog(false)}/>}
+    {showImport&&<CSVImportPanel onDone={()=>setShowImport(false)}/>}
+
+    {/* Filters */}
+    <div>
+      <div className="flex flex-wrap gap-2 mb-3">
+        <div className="flex gap-1 flex-wrap">
+          {[['all','All Sports'],['nba','🏀 NBA'],['nfl','🏈 NFL'],['mlb','⚾ MLB']].map(([v,l])=><FBtn key={v} active={sportF===v} onClick={()=>setSportF(v)}>{l}</FBtn>)}
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {[['all','All Markets'],['Spread','Spread'],['Total','Total'],['ML','ML']].map(([v,l])=><FBtn key={v} active={mktF===v} onClick={()=>setMktF(v)}>{l}</FBtn>)}
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {[['all','All'],['win','W'],['loss','L'],['push','P'],['pending','Pending']].map(([v,l])=><FBtn key={v} active={outcomeF===v} onClick={()=>setOutcomeF(v)}>{l}</FBtn>)}
+        </div>
+      </div>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search event or pick…" className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 transition-colors mb-3"/>
+
+      {/* Export */}
+      <div className="flex justify-between items-center mb-3">
+        <span className="text-slate-500 text-xs">{filtered.length} picks shown</span>
+        <button className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-semibold">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+          Export CSV
+        </button>
+      </div>
+
+      {/* Pick log table — desktop */}
+      <div className="hidden sm:block rounded-2xl border border-slate-800 overflow-hidden">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-slate-800/60 border-b border-slate-800">
+              {['','Date','Event','Mkt','Pick','Open','Picked','Close','CLV','Result','Δ Rating',''].map((h,i)=><th key={i} className="px-3 py-2.5 text-left text-slate-400 font-semibold tracking-wider uppercase text-[10px] whitespace-nowrap">{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(p=>{
+              const sport=SPORTS.find(s=>s.id===p.sport);
+              return <tr key={p.id} className={`border-b border-slate-800/60 last:border-0 hover:bg-white/3 transition-colors ${p.outcome==='pending'?'opacity-80':''}`}>
+                <td className="px-3 py-2.5"><LockIcon locked={p.locked}/></td>
+                <td className="px-3 py-2.5 text-slate-300 whitespace-nowrap">{p.date.slice(5)}</td>
+                <td className="px-3 py-2.5 text-white font-medium max-w-[140px] truncate">{p.event}</td>
+                <td className="px-3 py-2.5"><span className="text-indigo-300 text-[10px] font-semibold">{sport?.icon} {p.market}</span></td>
+                <td className="px-3 py-2.5 text-white font-semibold whitespace-nowrap">{p.pick}</td>
+                <td className="px-3 py-2.5 text-slate-400">{fmtLine(p.openLine)}</td>
+                <td className="px-3 py-2.5 text-slate-300 font-semibold">{fmtLine(p.pickedLine)}</td>
+                <td className="px-3 py-2.5 text-slate-400">{fmtLine(p.closingLine)}</td>
+                <td className="px-3 py-2.5"><CLVTag clv={p.clv}/></td>
+                <td className="px-3 py-2.5"><OutcomePill outcome={p.outcome}/></td>
+                <td className="px-3 py-2.5">
+                  {p.ratingDelta!==null&&p.ratingDelta!==undefined
+                    ? <span className={`font-black ${p.ratingDelta>0?'text-emerald-400':p.ratingDelta<0?'text-rose-400':'text-slate-400'}`}>{p.ratingDelta>0?'+':''}{p.ratingDelta}</span>
+                    : <span className="text-slate-600">—</span>}
+                </td>
+                <td className="px-3 py-2.5">
+                  {p.outcome!=='pending'&&onSharePick&&<button onClick={()=>onSharePick(p)} title="Share this pick" className="text-slate-600 hover:text-indigo-400 transition-colors text-xs">↗</button>}
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+        {filtered.length===0&&<p className="text-center text-slate-500 py-8">No picks match filters</p>}
+      </div>
+
+      {/* Mobile cards */}
+      <div className="sm:hidden space-y-2">
+        {filtered.map(p=>{
+          const sport=SPORTS.find(s=>s.id===p.sport);
+          return <div key={p.id} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5">
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <LockIcon locked={p.locked}/>
+                  <span className="text-slate-400 text-[10px]">{p.date.slice(5)} · {sport?.icon} {p.market}</span>
+                </div>
+                <p className="text-white text-sm font-semibold truncate">{p.event}</p>
+                <p className="text-indigo-300 text-xs">{p.pick}</p>
+              </div>
+              <OutcomePill outcome={p.outcome}/>
+            </div>
+            <div className="flex items-center gap-4 text-xs">
+              <div><span className="text-slate-500">Open </span><span className="text-slate-300">{fmtLine(p.openLine)}</span></div>
+              <div><span className="text-slate-500">Picked </span><span className="text-white font-semibold">{fmtLine(p.pickedLine)}</span></div>
+              <div><span className="text-slate-500">Close </span><span className="text-slate-300">{fmtLine(p.closingLine)}</span></div>
+              <div className="ml-auto"><span className="text-slate-500">CLV </span><CLVTag clv={p.clv}/></div>
+              {p.ratingDelta!==null&&p.ratingDelta!==undefined&&<div><span className={`font-black text-xs ${p.ratingDelta>0?'text-emerald-400':p.ratingDelta<0?'text-rose-400':'text-slate-400'}`}>{p.ratingDelta>0?'+':''}{p.ratingDelta}</span></div>}
+              {p.outcome!=='pending'&&onSharePick&&<button onClick={()=>onSharePick(p)} className="text-indigo-400 hover:text-indigo-300 text-[10px] font-bold transition-colors flex-shrink-0">Share ↗</button>}
+            </div>
+          </div>;
+        })}
+        {filtered.length===0&&<p className="text-center text-slate-500 py-6">No picks match filters</p>}
+      </div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   VIEW: EDGE ANALYSIS
+════════════════════════════════════════════════════════════════════ */
+function EdgeView(){
+  const [period,setPeriod]=useState('all');
+  const picks=useMemo(()=>{
+    const settled=PICK_LOG.filter(p=>p.outcome!=='pending');
+    if(period==='10') return settled.slice(0,10);
+    if(period==='30') return settled.slice(0,20);
+    return settled;
+  },[period]);
+
+  const stats=useMemo(()=>computeStats([...picks,...PICK_LOG.filter(p=>p.outcome==='pending')]),[picks]);
+  const sportSplits=useMemo(()=>computeSplits(picks,'sport',['nba','nfl','mlb']),[picks]);
+  const mktSplits=useMemo(()=>computeSplits(picks,'market',['Spread','Total','ML']),[picks]);
+
+  const allCLV=picks.filter(p=>p.clv!==null);
+  const posCLV=allCLV.filter(p=>p.clv>0).length;
+  const lineWith=picks.filter(p=>p.lineMovedWith).length;
+
+  const best=[...sportSplits,...mktSplits].filter(r=>r.wr!==null&&r.n>=3).sort((a,b)=>b.wr-a.wr).slice(0,2);
+  const leaks=[...sportSplits,...mktSplits].filter(r=>r.wr!==null&&r.n>=3&&r.clv!==null).sort((a,b)=>(a.clv||0)-(b.clv||0)).slice(0,2);
+
+  const SplitTable=({title,rows})=><div>
+    <h4 className="text-slate-400 text-xs font-semibold tracking-wider uppercase mb-2">{title}</h4>
+    <div className="rounded-xl border border-slate-800 overflow-hidden">
+      <table className="w-full text-xs">
+        <thead><tr className="bg-slate-800/40 border-b border-slate-800/60">
+          {['Category','W–L','Win %','Avg CLV','Sample'].map(h=><th key={h} className="px-3 py-2 text-left text-slate-500 font-semibold text-[10px] uppercase tracking-wider">{h}</th>)}
+        </tr></thead>
+        <tbody>{rows.map(r=>{
+          const sport=SPORTS.find(s=>s.id===r.val);
+          const label=sport?`${sport.icon} ${sport.label}`:r.val;
+          return <tr key={r.val} className="border-b border-slate-800/60 last:border-0 hover:bg-white/3">
+            <td className="px-3 py-2.5 text-white font-semibold">{label}</td>
+            <td className="px-3 py-2.5 text-slate-300">{r.w}–{r.l}{r.push?`–${r.push}P`:''}</td>
+            <td className="px-3 py-2.5"><span className={`font-bold ${r.wr>=60?'text-emerald-400':r.wr>=50?'text-white':'text-rose-400'}`}>{r.wr}%</span></td>
+            <td className="px-3 py-2.5"><CLVTag clv={r.clv}/></td>
+            <td className="px-3 py-2.5 text-slate-400">{r.n} picks{r.n<30&&<span className="text-amber-400 ml-1 text-[9px]">⚠ small</span>}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </div>
+  </div>;
+
+  return <div className="space-y-6 slide-up">
+    {/* Period selector */}
+    <div className="flex items-center gap-2">
+      <span className="text-slate-400 text-xs font-semibold">Period:</span>
+      {[['10','Last 10'],['30','Last 20'],['all','All-Time']].map(([v,l])=><button key={v} onClick={()=>setPeriod(v)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${period===v?'bg-indigo-600 text-white':'bg-slate-800 text-slate-400 hover:text-white'}`}>{l}</button>)}
+    </div>
+
+    {/* CLV + Market intel summary */}
+    <div>
+      <SectionHeader title="Market Intelligence" sub="How your picks compare to closing lines"/>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <StatBlock label="Avg CLV" value={`${parseFloat(stats.avgCLV)>0?'+':''}${stats.avgCLV}`} sub="vs closing line" accent={parseFloat(stats.avgCLV)>0?'text-emerald-400':'clv-neg'}/>
+        <StatBlock label="Beat Market" value={`${allCLV.length>0?Math.round(posCLV/allCLV.length*100):0}%`} sub="Picks with +CLV" accent={allCLV.length>0&&posCLV/allCLV.length>=0.55?'text-emerald-400':'text-white'}/>
+        <StatBlock label="Line Moved With" value={`${picks.length>0?Math.round(lineWith/picks.length*100):0}%`} sub="Market agreed post-entry"/>
+        <StatBlock label="Rating Gain" value={`${parseFloat(stats.ratingGain)>0?'+':''}${stats.ratingGain}`} sub="SMART pts total" accent={parseFloat(stats.ratingGain)>0?'text-emerald-400':'clv-neg'}/>
+      </div>
+      {/* CLV explanation */}
+      <div className="bg-slate-800/30 rounded-xl p-3 border border-slate-800">
+        <p className="text-slate-400 text-xs"><span className="text-indigo-400 font-semibold">Closing Line Value (CLV)</span> measures whether you got a better number than where the market settled. Positive CLV over a large sample is the strongest indicator of real edge — it shows you were ahead of sharp money, not just lucky on outcomes.</p>
+      </div>
+    </div>
+
+    {/* Trend bars (simplified sparkline) */}
+    <div>
+      <SectionHeader title="Win Rate Trend" sub="Rolling 5-pick windows"/>
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+        <div className="flex items-end gap-1 h-16">
+          {picks.filter(p=>p.outcome!=='pending').slice(0,15).reverse().map((p,i)=>{
+            const h=p.outcome==='win'?100:p.outcome==='loss'?20:50;
+            return <div key={i} className="flex-1 rounded-sm transition-all" style={{height:`${h}%`,background:p.outcome==='win'?'#34d399':p.outcome==='loss'?'#f87171':'#64748b'}}/>;
+          })}
+        </div>
+        <div className="flex justify-between mt-1">
+          <span className="text-slate-500 text-[10px]">← Older</span>
+          <span className="text-slate-500 text-[10px]">Recent →</span>
+        </div>
+        <div className="flex items-center gap-4 mt-2">
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-emerald-400"/><span className="text-slate-400 text-[10px]">Win</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-rose-400"/><span className="text-slate-400 text-[10px]">Loss</span></div>
+        </div>
+      </div>
+    </div>
+
+    {/* Splits */}
+    <SplitTable title="Performance by Sport" rows={sportSplits}/>
+    <SplitTable title="Performance by Market" rows={mktSplits}/>
+
+    {/* Best categories + leak alerts */}
+    <div className="grid sm:grid-cols-2 gap-4">
+      <div>
+        <h4 className="text-emerald-400 text-xs font-bold tracking-wider uppercase mb-2">✅ Best Categories</h4>
+        <div className="space-y-2">
+          {best.length>0?best.map(r=>{
+            const sport=SPORTS.find(s=>s.id===r.val);
+            const label=sport?`${sport.icon} ${sport.label}`:r.val;
+            return <div key={r.val} className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
+              <p className="text-white font-semibold text-sm">{label}</p>
+              <p className="text-emerald-400 font-black text-lg">{r.wr}%</p>
+              <p className="text-slate-400 text-xs">{r.w}W–{r.l}L · CLV {r.clv>0?'+':''}{r.clv?.toFixed(1)||'—'} · {r.n} picks</p>
+            </div>;
+          }):<p className="text-slate-500 text-xs">Need 3+ picks in a category</p>}
+        </div>
+      </div>
+      <div>
+        <h4 className="text-rose-400 text-xs font-bold tracking-wider uppercase mb-2">⚠ Leak Alerts</h4>
+        <div className="space-y-2">
+          {leaks.length>0?leaks.map(r=>{
+            const sport=SPORTS.find(s=>s.id===r.val);
+            const label=sport?`${sport.icon} ${sport.label}`:r.val;
+            return <div key={r.val} className="bg-rose-500/5 border border-rose-500/20 rounded-xl p-3">
+              <p className="text-white font-semibold text-sm">{label}</p>
+              <p className="text-rose-400 font-black text-lg">{r.wr}%</p>
+              <p className="text-slate-400 text-xs">{r.w}W–{r.l}L · CLV {r.clv>0?'+':''}{r.clv?.toFixed(1)||'—'} · {r.n} picks</p>
+            </div>;
+          }):<p className="text-slate-500 text-xs">No significant leaks detected</p>}
+        </div>
+      </div>
+    </div>
+
+    {/* Sample size advisory */}
+    <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+      <p className="text-amber-400 font-bold text-xs mb-1">⚠ Sample Size Advisory</p>
+      <p className="text-slate-400 text-xs">You have {PICK_LOG.filter(p=>p.outcome!=='pending').length} settled picks. Short-run results are noisy — a 7-2 hot streak carries little predictive weight. CLV over 100+ picks is a more reliable signal of durable edge. Your SMART Rating confidence interval widens at lower sample sizes.</p>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   VIEW: METHODOLOGY
+════════════════════════════════════════════════════════════════════ */
+function MethodologyView(){
+  const stats=computeStats(PICK_LOG);
+  const badges=computeBadges(ME.trades, stats);
+  return <div className="space-y-6 slide-up">
+    {/* SMART Rating */}
+    <div>
+      <SectionHeader title="How the SMART Rating Works" sub="A skill-correlated model for long-run prediction edge"/>
+      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+        {[
+          {icon:'📊',label:'Sample Size (20%)',desc:'More logged picks narrows the confidence interval. Ratings are unstable under 50 picks and flagged accordingly. Raw win streaks are discounted at low samples.'},
+          {icon:'🎯',label:'Market Difficulty (30%)',desc:'Picking against sharp lines (low-vig, efficient markets) is harder. Wins on these carry more weight. Public-heavy markets are discounted in the model.'},
+          {icon:'⚖️',label:'Stake Weight (25%)',desc:'Higher-confidence picks (larger implied stake) are weighted more. This prevents hedging behavior where users spread picks to inflate volume.'},
+          {icon:'📅',label:'Recency (25%)',desc:'Recent performance is weighted higher to capture current edge, not just historical variance. The decay factor prevents living off a long-ago hot streak.'},
+        ].map(f=><div key={f.label} className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2"><span className="text-xl">{f.icon}</span><span className="text-white font-bold text-sm">{f.label}</span></div>
+          <p className="text-slate-400 text-xs leading-relaxed">{f.desc}</p>
+        </div>)}
+      </div>
+      <div className="bg-slate-800/30 rounded-xl p-4 border border-slate-800">
+        <p className="text-slate-400 text-xs leading-relaxed">The SMART Rating is Elo/Glicko-inspired, with a global confidence interval that shrinks as sample grows. It does not use outcome-only models — CLV is factored in as a signal of market-beating behavior. Two predictors with the same win rate can have materially different ratings based on market difficulty and CLV.</p>
+      </div>
+    </div>
+
+    {/* CLV methodology */}
+    <div>
+      <SectionHeader title="Closing Line Value (CLV)" sub="The sharpest measure of prediction skill"/>
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-3">
+        <div className="flex gap-4 text-xs border-b border-slate-800 pb-3">
+          <div className="flex-1"><p className="text-slate-400 uppercase tracking-wider mb-1">Open Line</p><p className="text-white font-bold text-lg">-3.0</p></div>
+          <div className="flex-1"><p className="text-slate-400 uppercase tracking-wider mb-1">You Picked</p><p className="text-indigo-300 font-bold text-lg">-3.5</p></div>
+          <div className="flex-1"><p className="text-slate-400 uppercase tracking-wider mb-1">Closing</p><p className="text-white font-bold text-lg">-4.5</p></div>
+          <div className="flex-1"><p className="text-slate-400 uppercase tracking-wider mb-1">CLV</p><p className="text-emerald-400 font-bold text-lg">+1.0</p></div>
+        </div>
+        <p className="text-slate-400 text-xs leading-relaxed">You picked -3.5 before the market moved to -4.5. You got a full point better than the closing number, meaning sharp money agreed with you — and then some. This is positive CLV regardless of outcome. Sustained positive CLV over 100+ picks is the strongest publicly-verifiable proof of edge.</p>
+        <div className="flex items-center gap-2 mt-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-400"/>
+          <p className="text-emerald-400 text-xs font-semibold">Market moved with you → Sharps agreed with your pick after entry</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-rose-400"/>
+          <p className="text-rose-400 text-xs font-semibold">Market moved against you → Sharps faded your position after entry</p>
+        </div>
+      </div>
+    </div>
+
+    {/* Tier criteria */}
+    <div>
+      <SectionHeader title="Tier Entry Criteria" sub="Minimum pick thresholds before ranking eligibility — prevents small-sample heater rankings"/>
+      <div className="space-y-2">
+        {TIER_DEFS.map(t=><div key={t.name} className="flex items-center gap-3 bg-slate-900/60 border border-slate-800 rounded-xl p-3.5">
+          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background:t.color}}/>
+          <span className="w-20 font-bold text-sm" style={{color:t.color}}>{t.name}</span>
+          <span className="text-slate-400 text-xs flex-1">Rank 1–{t.maxRank} · {t.desc}</span>
+          <span className="text-slate-300 text-xs font-semibold flex-shrink-0">{t.minPicks}+ picks required</span>
+        </div>)}
+      </div>
+    </div>
+
+    {/* Credibility badges */}
+    <div>
+      <SectionHeader title="Credibility Badges" sub="Earned automatically — not awarded manually"/>
+      <div className="grid sm:grid-cols-2 gap-3">
+        {computeBadges(ME.trades, computeStats(PICK_LOG)).map(b=>{
+          const earned=true;
+          return <div key={b.key} className={`flex items-start gap-3 p-3.5 rounded-xl border ${earned?'border-indigo-700/40 bg-indigo-950/30':'border-slate-800 bg-slate-900/40 opacity-50'}`}>
+            <span className="text-2xl flex-shrink-0">{b.icon}</span>
+            <div><p className="text-white font-bold text-sm">{b.label}</p><p className="text-slate-400 text-xs">{b.desc}</p></div>
+            {earned&&<span className="text-emerald-400 text-xs font-bold ml-auto flex-shrink-0">✓ Earned</span>}
+          </div>;
+        })}
+        {/* Unearned example */}
+        {[{icon:'🏅',label:'500+ Picks',desc:'Deep long-run sample size'},{icon:'💎',label:'Positive CLV (500+ picks)',desc:'Beating the market at scale'}].map(b=><div key={b.label} className="flex items-start gap-3 p-3.5 rounded-xl border border-slate-800 bg-slate-900/40 opacity-50">
+          <span className="text-2xl flex-shrink-0 grayscale">{b.icon}</span>
+          <div><p className="text-slate-400 font-bold text-sm">{b.label}</p><p className="text-slate-500 text-xs">{b.desc}</p></div>
+          <span className="text-slate-600 text-xs font-bold ml-auto flex-shrink-0">Locked</span>
+        </div>)}
+      </div>
+    </div>
+
+    {/* Immutability policy */}
+    <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5">
+      <h4 className="text-emerald-400 font-bold text-sm mb-2">🔒 Immutability Policy</h4>
+      <div className="space-y-2 text-slate-400 text-xs leading-relaxed">
+        <p>• All picks are timestamped on submission with full metadata: event, market, line, odds, and submission time in UTC.</p>
+        <p>• Picks lock automatically at event start time. No edits, deletions, or re-entries are permitted after lock.</p>
+        <p>• Settlement is recorded with outcome, closing line, CLV, and rating delta — forming a permanent, tamper-evident log.</p>
+        <p>• Public profile pages show the full record, including losses. Cherry-picked screenshots are not the record.</p>
+        <p>• Pending picks are visible but clearly marked. Their outcome cannot be known or altered before lock.</p>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   USER STATUS BAR
+════════════════════════════════════════════════════════════════════ */
+function UserStatusBar({sport,onShare}){
+  const sr=ME.sportRatings[sport]||ME.sportRatings.nba;
+  const prog=tierProgress(ME.rank); const nt=spotsToNext(ME.rank);
+  const stats=computeStats(PICK_LOG);
+  const badges=computeBadges(ME.trades,stats);
+  return <div className="bg-indigo-950/40 border border-indigo-900/60 rounded-2xl p-4 mb-5 slide-up">
+    <div className="flex flex-wrap items-start gap-4 justify-between">
+      <div className="flex items-center gap-3 min-w-0">
+        <Avatar name={ME.name} size="lg" isMe/>
+        <div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-white font-black text-lg">{ME.name}</span>
+            <TierPill tierName={ME.tier.name}/>
+            <span className="text-indigo-400 text-[10px] font-semibold tracking-wider px-2 py-0.5 bg-indigo-500/10 rounded-full border border-indigo-500/20">Season 2</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+            <span className="text-slate-300 text-sm">#{ME.rank} · Top <span className="text-white font-bold">{pct(ME.rank)}%</span></span>
+            <span className="text-slate-500 text-xs">|</span>
+            <span className="text-slate-300 text-sm">Top <span className="text-white font-bold">{sr.pct}%</span> in {SPORTS.find(s=>s.id===sport)?.label}</span>
+            {ME.todayMovement!==0&&<><span className="text-slate-500 text-xs">|</span><span className={`text-sm font-bold ${ME.todayMovement>0?'text-emerald-400':'text-rose-400'}`}>{ME.todayMovement>0?'↑':'↓'}{Math.abs(ME.todayMovement)} today</span></>}
+          </div>
+          {/* Credibility badges row */}
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {badges.map(b=><span key={b.key} title={b.desc} className="text-[10px] bg-slate-800 border border-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-medium">{b.icon} {b.label}</span>)}
+          </div>
+        </div>
+      </div>
+      <button onClick={onShare} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors flex-shrink-0">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/></svg>
+        Share
+      </button>
+    </div>
+    {prog.next&&<div className="mt-3">
+      <div className="flex justify-between mb-1">
+        <span className="text-[10px] font-semibold" style={{color:prog.cur.color}}>{prog.cur.name}</span>
+        <span className="text-slate-400 text-[10px]">{nt?`${nt.spots} spots to `:'In '}<span className="font-semibold" style={{color:prog.next.color}}>{prog.next.name}</span></span>
+      </div>
+      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+        <div className="h-full rounded-full tier-bar" style={{width:`${prog.pct}%`,background:`linear-gradient(90deg,${prog.cur.color}80,${prog.next.color})`}}/>
+      </div>
+    </div>}
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SHARE MODAL — multi-card, Discord-ready
+════════════════════════════════════════════════════════════════════ */
+function ShareModal({onClose,pickForCard}){
+  const [cardType,setCardType]=useState('rank');
+  const [copied,setCopied]=useState(false);
+  const stats=useMemo(()=>computeStats(PICK_LOG),[]);
+  useEffect(()=>{const h=e=>{if(e.key==='Escape')onClose();};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[]);
+
+  const CARD_TYPES=[
+    {id:'rank',  label:'🏅 Rank',     desc:'Tier + global standing'},
+    {id:'clv',   label:'📡 CLV Proof',desc:'Edge, not luck'},
+    {id:'pick',  label:'🎯 Pick Result',desc:'Settled pick + delta'},
+    {id:'badge', label:'🏆 Season Badge',desc:'Season achievement'},
+  ];
+
+  // The representative pick for the pick card
+  const exPick=pickForCard||PICK_LOG.find(p=>p.outcome==='win'&&p.clv>0);
+
+  const TEXT={
+    rank:`🏅 Ranked #${ME.rank} · ${ME.tier.name} tier (Top ${pct(ME.rank)}%) on SportsPredict\n\n📊 SMART Rating: ${ME.rating}\n🎯 ${ME.winRate}% win rate · ${ME.trades} picks logged\n🔒 Verified immutable record\n\nsportspredict.com/u/${ME.name}`,
+    clv:`📡 Beating the market on ${stats.beatMkt}% of picks — avg CLV ${stats.avgCLV>0?'+':''}${stats.avgCLV}\n\n${stats.wins}W–${stats.losses}L over ${stats.total} settled picks\n🔒 Timestamped, immutable public record\n\nMy SportsPredict profile → sportspredict.com/u/${ME.name}`,
+    pick:exPick?`🎯 ${exPick.outcome==='win'?'✅ Hit':'❌ Miss'} ${exPick.pick} · ${exPick.market}\n📅 ${exPick.date} · Line: ${fmtLine(exPick.pickedLine)} → Close: ${fmtLine(exPick.closingLine)}\n📡 CLV: ${exPick.clv>0?'+':''}${exPick.clv} · SMART Δ ${exPick.ratingDelta>0?'+':''}${exPick.ratingDelta}\n🔒 Locked on-chain record\n\nsportspredict.com/u/${ME.name}`:'No settled picks yet',
+    badge:`🏆 Reached ${ME.tier.name} tier in Season 2 on SportsPredict\n\nTop ${pct(ME.rank)}% globally · SMART Rating ${ME.rating}\n🔒 ${ME.trades} verified picks logged\n\nsportspredict.com/u/${ME.name}`,
+  };
+  const shareText=TEXT[cardType]||TEXT.rank;
+  function copy(){navigator.clipboard.writeText(shareText).catch(()=>{});setCopied(true);setTimeout(()=>setCopied(false),2000);}
+
+  /* Card previews */
+  const CardRank=()=><div className="p-5" style={{background:'linear-gradient(135deg,#1e1b4b,#0f0a2e)'}}>
+    <div className="flex items-center gap-1 mb-3"><span className="text-white font-black text-xs">Sports</span><span className="text-indigo-400 font-black text-xs">Predict</span><span className="text-indigo-300 text-[9px]">.com</span></div>
+    <div className="flex items-center gap-3 mb-4">
+      <Avatar name={ME.name} size="lg" isMe/><div><p className="text-white font-black text-lg">{ME.name}</p><div className="flex items-center gap-2 mt-0.5"><TierPill tierName={ME.tier.name}/><span className="text-slate-300 text-xs">#{ME.rank} · Top {pct(ME.rank)}%</span></div></div>
+    </div>
+    <div className="grid grid-cols-4 gap-2 text-center">
+      {[['SMART',ME.rating],['Win%',ME.winRate+'%'],['CLV',`${parseFloat(stats.avgCLV)>0?'+':''}${stats.avgCLV}`],['Picks',ME.trades]].map(([l,v])=><div key={l} className="bg-white/5 rounded-lg py-2"><p className="text-slate-400 text-[8px] uppercase tracking-wider">{l}</p><p className="text-white font-black text-sm">{v}</p></div>)}
+    </div>
+    <p className="text-emerald-400 text-[9px] mt-3">🔒 Verified immutable record · Season 2</p>
+  </div>;
+
+  const CardCLV=()=><div className="p-5" style={{background:'linear-gradient(135deg,#022c22,#0d2a14)'}}>
+    <div className="flex items-center gap-1 mb-4"><span className="text-white font-black text-xs">Sports</span><span className="text-indigo-400 font-black text-xs">Predict</span><span className="text-[8px] text-emerald-400 ml-1 font-bold">· CLV Proof</span></div>
+    <p className="text-emerald-400 font-black text-4xl mb-1">{stats.beatMkt}%</p>
+    <p className="text-white font-bold text-sm mb-3">picks beat the closing line</p>
+    <div className="grid grid-cols-3 gap-3 text-center border-t border-emerald-900/60 pt-3">
+      <div><p className="text-emerald-300 font-black text-lg">{stats.avgCLV>0?'+':''}{stats.avgCLV}</p><p className="text-slate-400 text-[9px] uppercase">Avg CLV</p></div>
+      <div><p className="text-white font-black text-lg">{stats.total}</p><p className="text-slate-400 text-[9px] uppercase">Picks</p></div>
+      <div><p className="text-white font-black text-lg">{stats.winRate}%</p><p className="text-slate-400 text-[9px] uppercase">Win Rate</p></div>
+    </div>
+    <p className="text-slate-500 text-[8px] mt-3">🔒 Timestamped · No edits after lock · sportspredict.com/u/{ME.name}</p>
+  </div>;
+
+  const CardPick=()=>exPick?<div className="p-5" style={{background:'linear-gradient(135deg,#1a1a2e,#16213e)'}}>
+    <div className="flex items-center gap-1 mb-4"><span className="text-white font-black text-xs">Sports</span><span className="text-indigo-400 font-black text-xs">Predict</span><span className="text-[8px] text-indigo-300 ml-1 font-bold">· Pick Result</span></div>
+    <div className="flex items-center justify-between mb-3">
+      <div><p className="text-slate-400 text-[10px]">{exPick.date} · {exPick.market}</p><p className="text-white font-bold text-sm">{exPick.event}</p><p className="text-indigo-300 font-black text-lg">{exPick.pick}</p></div>
+      <div className={`text-3xl font-black ${exPick.outcome==='win'?'text-emerald-400':'text-rose-400'}`}>{exPick.outcome==='win'?'✅':'❌'}</div>
+    </div>
+    <div className="grid grid-cols-3 gap-2 text-center border-t border-slate-700/60 pt-3">
+      <div><p className="text-slate-300 font-mono text-xs">{fmtLine(exPick.pickedLine)}</p><p className="text-slate-500 text-[8px] uppercase">Picked</p></div>
+      <div><p className="text-slate-300 font-mono text-xs">{fmtLine(exPick.closingLine)}</p><p className="text-slate-500 text-[8px] uppercase">Closed</p></div>
+      <div><p className={`font-black text-sm ${exPick.clv>0?'text-emerald-400':'text-rose-400'}`}>{exPick.clv>0?'+':''}{exPick.clv} CLV</p><p className="text-slate-500 text-[8px] uppercase">Edge</p></div>
+    </div>
+    <p className="text-slate-500 text-[8px] mt-3">🔒 Locked at game time · SMART Δ {exPick.ratingDelta>0?'+':''}{exPick.ratingDelta} · sportspredict.com/u/{ME.name}</p>
+  </div>:<div className="p-5 text-slate-400 text-xs">No settled picks available</div>;
+
+  const CardBadge=()=><div className="p-5 flex flex-col items-center text-center" style={{background:'linear-gradient(135deg,#1c1917,#292524)'}}>
+    <div className="flex items-center gap-1 mb-4"><span className="text-white font-black text-xs">Sports</span><span className="text-indigo-400 font-black text-xs">Predict</span></div>
+    <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-3" style={{background:ME.tier.color+'20',border:`2px solid ${ME.tier.color}50`}}>🏆</div>
+    <p className="text-white font-black text-xl mb-1">{ME.tier.name}</p>
+    <p className="text-slate-300 text-xs mb-3">Season 2 · {ME.tier.desc}</p>
+    <div className="flex items-center gap-4 text-center">
+      <div><p className="text-white font-black text-base">{ME.rating}</p><p className="text-slate-400 text-[8px] uppercase">SMART</p></div>
+      <div><p className="text-white font-black text-base">#{ME.rank}</p><p className="text-slate-400 text-[8px] uppercase">Global</p></div>
+      <div><p className="text-white font-black text-base">Top {pct(ME.rank)}%</p><p className="text-slate-400 text-[8px] uppercase">Percentile</p></div>
+    </div>
+    <p className="text-slate-500 text-[8px] mt-4">🔒 {ME.trades} picks verified · sportspredict.com/u/{ME.name}</p>
+  </div>;
+
+  const CARDS={rank:<CardRank/>,clv:<CardCLV/>,pick:<CardPick/>,badge:<CardBadge/>};
+
+  return <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"/>
+    <div onClick={e=>e.stopPropagation()} className="fade-in relative w-full sm:max-w-md bg-gradient-to-b from-slate-800 to-slate-900 sm:rounded-2xl rounded-t-2xl border border-slate-700/80 shadow-2xl max-h-[92vh] overflow-y-auto">
+      <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="w-10 h-1 bg-slate-600 rounded-full"/></div>
+      <button onClick={onClose} className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center text-slate-400 hover:text-white rounded-full hover:bg-slate-700 transition-colors z-10">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+      <div className="p-6">
+        <h3 className="text-white font-black text-lg mb-1">Share</h3>
+        <p className="text-slate-400 text-xs mb-4">Pick your card format — designed to work in Discord, X, and group chats.</p>
+
+        {/* Card type selector */}
+        <div className="grid grid-cols-4 gap-1.5 mb-4">
+          {CARD_TYPES.map(ct=><button key={ct.id} onClick={()=>setCardType(ct.id)}
+            className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-center transition-all ${cardType===ct.id?'border-indigo-600 bg-indigo-950/60':'border-slate-700 bg-slate-800/60 hover:border-slate-600'}`}>
+            <span className="text-base">{ct.label.split(' ')[0]}</span>
+            <span className="text-[9px] font-semibold text-slate-300 leading-tight">{ct.label.split(' ').slice(1).join(' ')}</span>
+          </button>)}
+        </div>
+
+        {/* Card preview */}
+        <div className="rounded-xl overflow-hidden mb-4 border border-slate-700/50">{CARDS[cardType]}</div>
+
+        {/* Copy text */}
+        <pre className="bg-slate-800/60 rounded-xl p-3 text-slate-300 text-[10px] whitespace-pre-wrap font-sans leading-relaxed mb-4 max-h-28 overflow-y-auto">{shareText}</pre>
+
+        {/* Actions */}
+        <div className="grid grid-cols-3 gap-2">
+          <button onClick={copy} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-bold text-xs transition-colors ${copied?'bg-emerald-600 text-white':'bg-slate-700 hover:bg-slate-600 text-white'}`}>
+            {copied?'✓ Copied!':'📋 Copy'}
+          </button>
+          <button className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752c4] text-white font-bold text-xs transition-colors">
+            💬 Discord
+          </button>
+          <button className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#1DA1F2] hover:bg-[#1a94e0] text-white font-bold text-xs transition-colors">
+            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.736-8.835L1.254 2.25H8.08l4.259 5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            Post to X
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CREATOR MODAL
+════════════════════════════════════════════════════════════════════ */
+function CreatorModal({creator,onClose}){
+  useEffect(()=>{const h=e=>{if(e.key==='Escape')onClose();};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[]);
+  const prog=tierProgress(creator.rank);
+  return <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"/>
+    <div onClick={e=>e.stopPropagation()} className="fade-in relative w-full sm:max-w-md bg-gradient-to-b from-slate-800 to-slate-900 sm:rounded-2xl rounded-t-2xl border border-slate-700/80 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="w-10 h-1 bg-slate-600 rounded-full"/></div>
+      <button onClick={onClose} className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center text-slate-400 hover:text-white rounded-full hover:bg-slate-700 transition-colors z-10">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+      <div className="p-6">
+        {/* Header */}
+        <div className="flex items-start gap-4 mb-5">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-black text-white text-xl flex-shrink-0">
+            {creator.handle[0]}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-white font-black text-lg">{creator.handle}</span>
+              <span className="text-[9px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded font-bold">✓ VERIFIED CREATOR</span>
+            </div>
+            <p className="text-slate-400 text-xs mt-0.5">{creator.icon} {creator.platform} · {creator.followers} followers</p>
+            <div className="flex items-center gap-2 mt-1"><TierPill tierName={creator.tier.name}/><span className="text-slate-400 text-xs">#{creator.rank} global</span></div>
+          </div>
+        </div>
+
+        <p className="text-slate-300 text-sm leading-relaxed mb-5">{creator.bio}</p>
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          {[['SMART Rating',creator.rating,'text-white'],['Win Rate',creator.winRate+'%','text-emerald-400'],['Avg CLV','+'+creator.avgCLV,'text-indigo-300']].map(([l,v,c])=>
+            <div key={l} className="bg-slate-800/60 rounded-xl py-3 text-center"><p className={`font-black text-xl ${c}`}>{v}</p><p className="text-slate-500 text-[9px] uppercase tracking-wider mt-0.5">{l}</p></div>
+          )}
+        </div>
+
+        {/* Tier progress */}
+        {prog.next&&<div className="mb-5 bg-slate-800/40 rounded-xl p-3">
+          <div className="flex justify-between mb-1"><span className="text-[10px] font-semibold" style={{color:prog.cur.color}}>{prog.cur.name}</span><span className="text-[10px] font-semibold" style={{color:prog.next.color}}>{prog.next.name}</span></div>
+          <div className="h-2 bg-slate-700 rounded-full overflow-hidden"><div className="h-full rounded-full tier-bar" style={{width:`${prog.pct}%`,background:`linear-gradient(90deg,${prog.cur.color}80,${prog.next.color})`}}/></div>
+          <p className="text-slate-500 text-[10px] mt-1">{creator.picks} picks logged</p>
+        </div>}
+
+        {/* Community ladder preview */}
+        <div className="mb-5">
+          <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">{creator.community} — Top Members</p>
+          <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
+            {creator.leaderboard.map((p,i)=><div key={i} className={`flex items-center gap-3 px-4 py-2.5 border-b border-slate-800/60 last:border-0 ${p.isMe?'bg-indigo-950/50':''}`}>
+              <span className={`w-5 text-center font-bold text-xs flex-shrink-0 ${i===0?'text-yellow-400':i<3?'text-indigo-400':'text-slate-500'}`}>{i+1}</span>
+              <Avatar name={p.name} size="sm" isMe={!!p.isMe}/>
+              <span className="flex-1 text-white text-xs font-semibold truncate">{p.name}{p.isMe&&<span className="ml-1 text-indigo-400 text-[9px] font-bold">YOU</span>}</span>
+              <TierPill tierName={p.tier.name} small/>
+              <span className="text-white font-black text-sm ml-2">{p.rating}</span>
+            </div>)}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="grid grid-cols-2 gap-2">
+          <button className={`py-3 rounded-xl font-bold text-sm transition-colors ${creator.joined?'bg-indigo-500/20 text-indigo-400 border border-indigo-600/40':'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
+            {creator.joined?'✓ Community Joined':'Join Community'}
+          </button>
+          <button className="py-3 rounded-xl bg-[#5865F2] hover:bg-[#4752c4] text-white font-bold text-sm transition-colors">
+            💬 Share to Discord
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   GTM DATA — CREATORS & COMMUNITIES
+════════════════════════════════════════════════════════════════════ */
+const CREATORS = [
+  { id:'cr1', handle:'SharpBetsTV', platform:'YouTube', icon:'📺', followers:'48K', verified:true,
+    bio:'Daily CLV breakdowns and market fade analysis. 3+ years of verified public record.',
+    sport:'nba', rating:96.4, rank:12, tier:getTier(12), picks:312, winRate:68, avgCLV:1.8,
+    community:'NBA Sharps Collective', members:847, joined:true,
+    leaderboard:[
+      {rank:1,name:'JohnKane',   rating:97,  tier:getTier(7),  movement:+3},
+      {rank:2,name:'sfzevi',     rating:91.2,tier:getTier(73), movement:+17, isMe:true},
+      {rank:3,name:'staggo',     rating:96,  tier:getTier(9),  movement:+1},
+      {rank:4,name:'AlphaWave', rating:95,  tier:getTier(12), movement:+2},
+      {rank:5,name:'QuickDraw', rating:91.5,tier:getTier(71), movement:+2},
+    ]},
+  { id:'cr2', handle:'DFSKing_', platform:'X / Twitter', icon:'𝕏', followers:'112K', verified:true,
+    bio:'DFS optimizer + sports prediction. Top 0.5% all-time. Picks logged publicly since 2023.',
+    sport:'nfl', rating:98.1, rank:4, tier:getTier(4), picks:891, winRate:71, avgCLV:2.4,
+    community:'Fantasy Edge Guild', members:2341, joined:false,
+    leaderboard:[
+      {rank:1,name:'GridironGuru',rating:100, tier:getTier(1),  movement:0},
+      {rank:2,name:'BlitzKing',  rating:99,  tier:getTier(2),  movement:+1},
+      {rank:3,name:'FourthDown', rating:97,  tier:getTier(4),  movement:+2},
+      {rank:4,name:'TackleBox',  rating:96,  tier:getTier(5),  movement:0},
+      {rank:5,name:'SnapCount',  rating:95,  tier:getTier(6),  movement:-1},
+    ]},
+  { id:'cr3', handle:'TheCLVReport', platform:'Substack', icon:'📰', followers:'22K', verified:true,
+    bio:'Weekly CLV analysis and market-beating picks. Research-first, no hype.',
+    sport:'mlb', rating:95.1, rank:18, tier:getTier(18), picks:544, winRate:65, avgCLV:1.1,
+    community:'The CLV Report Community', members:619, joined:false,
+    leaderboard:[
+      {rank:1,name:'DiamondDave',  rating:100, tier:getTier(1),  movement:0},
+      {rank:2,name:'SluggerX',     rating:99,  tier:getTier(2),  movement:+1},
+      {rank:3,name:'CurveballKing',rating:98,  tier:getTier(3),  movement:-1},
+      {rank:4,name:'PinchHitter',  rating:97,  tier:getTier(4),  movement:0},
+      {rank:5,name:'DoublePlay',   rating:96,  tier:getTier(5),  movement:+2},
+    ]},
+];
+
+const SPORT_COMMUNITIES = [
+  {id:'sc1',sport:'nba',label:'NBA Sharps',icon:'🏀',members:3241,minRating:90,description:'For NBA predictors with 50+ picks and Gold tier or above.'},
+  {id:'sc2',sport:'nfl',label:'NFL Analysts',icon:'🏈',members:2108,minRating:88,description:'Spread and total specialists focused on NFL edge.'},
+  {id:'sc3',sport:'mlb',label:'Diamond League',icon:'⚾',members:1456,minRating:85,description:'MLB deep-sample predictors. CLV-positive encouraged.'},
+  {id:'sc4',sport:'all',label:'Sharp Collective',icon:'🎯',members:892,minRating:93,description:'Cross-sport. Top 10% rating required. Application-only.'},
+];
+
+/* ── CSV Import (inside My Record) ─────────────────────────────── */
+const CSV_TEMPLATE = `date,event,sport,market,pick,line,odds,outcome
+2026-05-17,Lakers vs Warriors,nba,Spread,Lakers -3.5,-3.5,-110,win
+2026-05-16,Chiefs vs Cowboys,nfl,Total,Under 44,44,-110,win
+2026-05-15,Yankees vs Red Sox,mlb,ML,Yankees -120,-120,-120,loss`;
+
+function CSVImportPanel({onDone}){
+  const [step,setStep]=useState(0); // 0=idle,1=paste,2=preview,3=done
+  const [raw,setRaw]=useState('');
+  const [parsed,setParsed]=useState([]);
+
+  function parse(){
+    const lines=raw.trim().split('\n').slice(1).filter(Boolean);
+    const rows=lines.map((l,i)=>{
+      const [date,event,sport,market,pick,line,odds,outcome]=l.split(',');
+      return {id:'imp'+i,date,event,sport,market,pick,line,odds,outcome:outcome?.trim()||'pending'};
+    }).filter(r=>r.event&&r.pick);
+    setParsed(rows); setStep(2);
+  }
+  function confirm(){ setStep(3); setTimeout(()=>{setStep(0);setRaw('');setParsed([]);if(onDone)onDone();},2500); }
+
+  const inp='w-full bg-slate-800 border border-slate-700 text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 transition-colors font-mono';
+
+  if(step===0) return <button onClick={()=>setStep(1)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-700 hover:border-indigo-600 text-slate-400 hover:text-white text-sm font-semibold transition-colors">
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+    Import picks from CSV / spreadsheet
+  </button>;
+
+  if(step===3) return <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl fade-in">
+    <span className="text-2xl">🔒</span>
+    <div><p className="text-emerald-400 font-bold text-sm">{parsed.length} picks imported and timestamped</p><p className="text-slate-400 text-xs">Locked at import time. Appear in your immutable record.</p></div>
+  </div>;
+
+  return <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4 slide-up">
+    <div className="flex items-center justify-between">
+      <h4 className="text-white font-bold text-sm">Import Picks</h4>
+      <button onClick={()=>{setStep(0);setRaw('');setParsed([]);}} className="text-slate-500 hover:text-white text-xs">Cancel</button>
+    </div>
+
+    {step===1&&<>
+      <div>
+        <p className="text-slate-400 text-xs mb-2">Template (copy from your spreadsheet in this format):</p>
+        <pre className="text-indigo-300 text-[10px] bg-slate-800 rounded-lg p-3 overflow-x-auto whitespace-pre font-mono leading-relaxed">{CSV_TEMPLATE}</pre>
+      </div>
+      <div>
+        <p className="text-slate-400 text-xs mb-1">Paste your picks CSV here:</p>
+        <textarea value={raw} onChange={e=>setRaw(e.target.value)} rows={6} placeholder="Paste CSV rows here (including header)…" className={inp}/>
+      </div>
+      <button onClick={parse} disabled={!raw.trim()} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors">
+        Parse & Preview →
+      </button>
+    </>}
+
+    {step===2&&<>
+      <p className="text-slate-400 text-xs">{parsed.length} picks parsed. Review before import — once confirmed, picks are timestamped and locked.</p>
+      <div className="max-h-48 overflow-y-auto space-y-1.5">
+        {parsed.map(p=><div key={p.id} className="flex items-center gap-3 bg-slate-800/60 rounded-lg px-3 py-2 text-xs">
+          <span className="text-slate-400 w-16 flex-shrink-0">{p.date}</span>
+          <span className="text-white flex-1 truncate font-medium">{p.event}</span>
+          <span className="text-indigo-300">{p.market}</span>
+          <span className="text-slate-300">{p.pick}</span>
+          <span className={`font-bold flex-shrink-0 ${p.outcome==='win'?'text-emerald-400':p.outcome==='loss'?'text-rose-400':'text-amber-400'}`}>{p.outcome}</span>
+        </div>)}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={()=>setStep(1)} className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm transition-colors">← Back</button>
+        <button onClick={confirm} className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors">🔒 Import & Lock {parsed.length} Picks</button>
+      </div>
+    </>}
+  </div>;
+}
+
+/* ── Communities View ──────────────────────────────────────────── */
+function CommunitiesView({onCreatorSelect}){
+  const [activeCommunity,setActiveCommunity]=useState(CREATORS[0].id);
+  const active=CREATORS.find(c=>c.id===activeCommunity)||CREATORS[0];
+  const [joinedSport,setJoinedSport]=useState('sc1');
+
+  return <div className="space-y-8 slide-up">
+
+    {/* Tool-first positioning banner */}
+    <div className="grid sm:grid-cols-2 gap-3">
+      <div className="bg-indigo-950/40 border border-indigo-800/40 rounded-2xl p-4">
+        <p className="text-indigo-400 font-bold text-xs uppercase tracking-wider mb-1">For Sharps</p>
+        <p className="text-white font-bold text-base mb-1">CLV · Immutable Record · Market Edge</p>
+        <p className="text-slate-400 text-xs">Your proof of edge is timestamped and public. Share your CLV, not your screenshots.</p>
+      </div>
+      <div className="bg-amber-950/30 border border-amber-800/30 rounded-2xl p-4">
+        <p className="text-amber-400 font-bold text-xs uppercase tracking-wider mb-1">For Fanatics</p>
+        <p className="text-white font-bold text-base mb-1">Tiers · Badges · Leaderboards</p>
+        <p className="text-slate-400 text-xs">Climb the tier ladder, earn season badges, and compete in your community's ranking.</p>
+      </div>
+    </div>
+
+    {/* Verified Creators */}
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-white font-black text-base">Verified Creators</h3>
+          <p className="text-slate-400 text-xs mt-0.5">Respected analysts with public, verified records on SportsPredict</p>
+        </div>
+        <span className="text-indigo-400 text-xs font-semibold bg-indigo-500/10 px-2.5 py-1 rounded-full border border-indigo-500/20">Apply for Creator →</span>
+      </div>
+      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+        {CREATORS.map(c=><button key={c.id} onClick={()=>{setActiveCommunity(c.id);onCreatorSelect(c);}}
+          className={`text-left p-4 rounded-2xl border transition-all hover:scale-[1.02] ${activeCommunity===c.id?'border-indigo-600/60 bg-indigo-950/40':'border-slate-800 bg-slate-900/40 hover:border-slate-700'}`}>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-black text-white text-sm flex-shrink-0">
+                {c.handle[0]}
+              </div>
+              <div>
+                <div className="flex items-center gap-1">
+                  <span className="text-white font-bold text-sm">{c.handle}</span>
+                  <span className="text-[9px] bg-indigo-500/20 text-indigo-400 px-1 py-0.5 rounded font-bold">✓ VERIFIED</span>
+                </div>
+                <span className="text-slate-400 text-[10px]">{c.icon} {c.platform} · {c.followers}</span>
+              </div>
+            </div>
+            <TierPill tierName={c.tier.name} small/>
+          </div>
+          <p className="text-slate-400 text-[11px] leading-relaxed mb-3">{c.bio}</p>
+          <div className="grid grid-cols-3 gap-2 text-center border-t border-slate-800/60 pt-3">
+            <div><p className="text-white font-black text-sm">{c.rating}</p><p className="text-slate-500 text-[9px] uppercase tracking-wider">SMART</p></div>
+            <div><p className="text-emerald-400 font-black text-sm">{c.winRate}%</p><p className="text-slate-500 text-[9px] uppercase tracking-wider">Win Rate</p></div>
+            <div><p className="text-indigo-300 font-black text-sm">+{c.avgCLV}</p><p className="text-slate-500 text-[9px] uppercase tracking-wider">Avg CLV</p></div>
+          </div>
+          <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-800/60">
+            <span className="text-slate-400 text-[10px]">👥 {c.community}</span>
+            <span className="text-slate-500 text-[10px]">{c.members.toLocaleString()} members</span>
+          </div>
+          {c.joined&&<div className="mt-2 text-center py-1.5 rounded-lg bg-indigo-600/20 text-indigo-400 text-[10px] font-bold">✓ JOINED</div>}
+        </button>)}
+      </div>
+
+      {/* Active creator ladder */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h4 className="text-white font-bold text-sm">{active.community}</h4>
+            <p className="text-slate-400 text-xs">{active.members.toLocaleString()} members · {active.icon} {active.handle}'s community ladder</p>
+          </div>
+          <button className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${active.joined?'bg-indigo-600/20 text-indigo-400 border border-indigo-600/40':'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
+            {active.joined?'✓ Joined':'Join Community'}
+          </button>
+        </div>
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden">
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-800/40 border-b border-slate-800/60 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <span className="w-6">Rk</span><span className="flex-1 pl-9">Player</span><span>Today</span><span className="ml-auto">SMART</span>
+          </div>
+          {active.leaderboard.map((p,i)=><div key={i} className={`flex items-center gap-3 px-4 py-3 border-b border-slate-800/60 last:border-0 ${p.isMe?'bg-indigo-950/50 ring-1 ring-inset ring-indigo-700/40':''}`}>
+            <span className={`w-6 text-center font-bold text-sm flex-shrink-0 ${i===0?'text-yellow-400':i===1?'text-indigo-400':i===2?'text-amber-500':'text-slate-500'}`}>{i+1}</span>
+            <Avatar name={p.name} size="sm" isMe={!!p.isMe}/>
+            <span className="flex-1 text-white text-sm font-semibold truncate">
+              {p.name}{p.isMe&&<span className="ml-1.5 text-indigo-400 text-[10px] font-bold bg-indigo-500/10 px-1 py-0.5 rounded">YOU</span>}
+            </span>
+            <TierPill tierName={p.tier.name} small/>
+            <MovTag n={p.movement}/>
+            <span className="text-white font-black text-base ml-2">{p.rating}</span>
+          </div>)}
+        </div>
+        {/* Discord share for this ladder */}
+        <div className="mt-3 flex items-center gap-2 p-3 bg-[#5865F2]/10 border border-[#5865F2]/30 rounded-xl">
+          <span className="text-lg">💬</span>
+          <p className="text-slate-300 text-xs flex-1">Share this community ladder to Discord — members can click through to join and see their global rank.</p>
+          <button className="px-3 py-1.5 rounded-lg bg-[#5865F2] hover:bg-[#4752c4] text-white text-xs font-bold transition-colors flex-shrink-0">
+            Share to Discord
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {/* Sport-specific public communities */}
+    <div>
+      <h3 className="text-white font-black text-base mb-1">Sport Communities</h3>
+      <p className="text-slate-400 text-xs mb-4">Public ladders for each sport. Compete within your niche without joining the full ecosystem.</p>
+      <div className="grid sm:grid-cols-2 gap-3">
+        {SPORT_COMMUNITIES.map(sc=><div key={sc.id} className={`p-4 rounded-2xl border transition-all ${joinedSport===sc.id?'border-indigo-700/60 bg-indigo-950/30':'border-slate-800 bg-slate-900/40'}`}>
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{sc.icon}</span>
+              <div>
+                <p className="text-white font-bold text-sm">{sc.label}</p>
+                <p className="text-slate-500 text-[10px]">{sc.members.toLocaleString()} members · {sc.minRating}+ rating to rank</p>
+              </div>
+            </div>
+            <button onClick={()=>setJoinedSport(sc.id)} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors flex-shrink-0 ${joinedSport===sc.id?'bg-indigo-500/20 text-indigo-400':'bg-slate-700 hover:bg-slate-600 text-white'}`}>
+              {joinedSport===sc.id?'✓ Joined':'Join'}
+            </button>
+          </div>
+          <p className="text-slate-400 text-[11px] leading-relaxed">{sc.description}</p>
+          {joinedSport===sc.id&&<div className="mt-3 flex items-center gap-2 text-xs text-indigo-400"><span>📍</span><span>You appear in this ladder at your global rank</span></div>}
+        </div>)}
+      </div>
+    </div>
+
+    {/* Discord share explainer */}
+    <div className="bg-[#5865F2]/8 border border-[#5865F2]/25 rounded-2xl p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xl">💬</span>
+        <h4 className="text-white font-bold text-sm">Discord-Native Distribution</h4>
+      </div>
+      <div className="grid sm:grid-cols-3 gap-3">
+        {[
+          {icon:'🏅',label:'Rank Card',desc:'Drop your tier + rating as a rich embed. Auto-unfurls in Discord.'},
+          {icon:'📡',label:'CLV Proof Card',desc:'Show your beat-market % and avg CLV — the stat Sharps actually care about.'},
+          {icon:'🎯',label:'Pick Result Card',desc:'Post a settled pick with line, CLV, and rating delta. No editing after lock.'},
+        ].map(c=><div key={c.label} className="bg-slate-900/60 rounded-xl p-3">
+          <span className="text-xl">{c.icon}</span>
+          <p className="text-white font-semibold text-xs mt-1">{c.label}</p>
+          <p className="text-slate-400 text-[10px] mt-0.5 leading-relaxed">{c.desc}</p>
+        </div>)}
+      </div>
+    </div>
+
+  </div>;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   MAIN APP
+════════════════════════════════════════════════════════════════════ */
+function SportsPredict(){
+  const [sport,setSport]=useState('nba');
+  const [view,setView]=useState('global');
+  const [profile,setProfile]=useState(null);
+  const [sharing,setSharing]=useState(false);
+  const [sharePickCard,setSharePickCard]=useState(null);
+  const [creatorModal,setCreatorModal]=useState(null);
+  const [navOpen,setNavOpen]=useState(false);
+  const tabsRef=useRef(null);
+  const players=PLAYERS_BY_SPORT[sport]||[];
+  const sportLabel=SPORTS.find(s=>s.id===sport)?.label||'';
+
+  useEffect(()=>{
+    if(!tabsRef.current) return;
+    const el=tabsRef.current.querySelector('[data-active="true"]');
+    if(el) el.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  },[sport]);
+
+  const VIEWS=[
+    {id:'global',label:'🌐 Global'},
+    {id:'nearme',label:'📍 Near Me'},
+    {id:'record',label:'📋 My Record'},
+    {id:'edge',label:'📊 Edge'},
+    {id:'communities',label:'🏘 Communities'},
+    {id:'method',label:'📖 How It Works'},
+  ];
+
+  return <div className="min-h-screen bg-[#0d1117]">
+    {/* Nav */}
+    <nav className="bg-[#0a0d14]/95 border-b border-slate-800/80 sticky top-0 z-40 backdrop-blur">
+      <div className="max-w-5xl mx-auto px-4 flex items-center h-14 gap-4">
+        <a href="#" className="font-black text-lg tracking-tight select-none flex-shrink-0"><span className="text-white">Sports</span><span className="text-indigo-400">Predict</span><span className="text-indigo-400 text-[10px]">.com</span></a>
+        <div className="flex-1"/>
+        <div className="hidden sm:flex items-center gap-1">
+          {['Home','Events','Leaderboard','Profile'].map(item=><button key={item} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${item==='Leaderboard'?'text-white bg-slate-800':'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}>{item}</button>)}
+        </div>
+        <button className="relative w-9 h-9 flex items-center justify-center rounded-full bg-slate-800 text-slate-300 hover:text-white transition-colors">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/></svg>
+          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-indigo-500 rounded-full text-[9px] font-bold flex items-center justify-center text-white">4</span>
+        </button>
+        <button className="sm:hidden w-9 h-9 flex items-center justify-center rounded-full bg-slate-800 text-slate-300" onClick={()=>setNavOpen(!navOpen)}>
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+        </button>
+      </div>
+      {navOpen&&<div className="sm:hidden border-t border-slate-800/80 px-4 py-3 flex flex-col gap-1">
+        {['Home','Events','Leaderboard','Profile'].map(item=><button key={item} onClick={()=>setNavOpen(false)} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium ${item==='Leaderboard'?'text-white bg-slate-800':'text-slate-400'}`}>{item}</button>)}
+      </div>}
+    </nav>
+
+    {/* Sport tabs */}
+    <div className="bg-[#0d1117]/90 border-b border-slate-800/60 sticky top-14 z-30 backdrop-blur">
+      <div className="max-w-5xl mx-auto px-4">
+        <div ref={tabsRef} className="flex gap-2 overflow-x-auto py-3 scrollbar-hide">
+          {SPORTS.map(s=><button key={s.id} data-active={sport===s.id} onClick={()=>setSport(s.id)} className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${sport===s.id?'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25':'text-slate-400 hover:text-white hover:bg-slate-800/70'}`}>
+            <span className="text-[15px] leading-none">{s.icon}</span>{s.label}
+          </button>)}
+        </div>
+      </div>
+    </div>
+
+    {/* Main */}
+    <div className="max-w-5xl mx-auto px-4 py-8 pb-24 sm:pb-8">
+      {/* Header */}
+      <div className="text-center mb-6">
+        <p className="text-indigo-400 font-bold text-[11px] tracking-[0.2em] uppercase mb-1">Global Leaderboard</p>
+        <h1 className="text-white font-black text-4xl sm:text-5xl mb-2">{sportLabel}</h1>
+        <p className="text-slate-400 text-sm max-w-md mx-auto">The SMART Rating shows how players stack up by balancing profit and consistency.</p>
+      </div>
+
+      {/* User status bar */}
+      <UserStatusBar sport={sport} onShare={()=>setSharing(true)}/>
+
+      {/* View tabs */}
+      <div className="flex gap-1 p-1 bg-slate-800/50 rounded-xl mb-6 overflow-x-auto scrollbar-hide">
+        {VIEWS.map(v=><button key={v.id} onClick={()=>setView(v.id)} className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${view===v.id?'bg-indigo-600 text-white shadow-md':'text-slate-400 hover:text-white'}`}>{v.label}</button>)}
+      </div>
+
+      {/* View content */}
+      {view==='global'&&<GlobalView sport={sport} players={players} onSelect={setProfile}/>}
+      {view==='nearme'&&<NearMeView sport={sport} onSelect={setProfile}/>}
+      {view==='record'&&<MyRecordView onSharePick={p=>{setSharePickCard(p);setSharing(true);}}/>}
+      {view==='edge'&&<EdgeView/>}
+      {view==='communities'&&<CommunitiesView onCreatorSelect={setCreatorModal}/>}
+      {view==='method'&&<MethodologyView/>}
+
+      <p className="mt-8 text-center text-slate-600 text-xs">
+        <span className="text-indigo-500 font-semibold">SMART Rating</span> v1 · Season 2: Jan–Apr 2026 · All picks immutably logged
+      </p>
+    </div>
+
+    {/* Mobile bottom nav */}
+    <div className="sm:hidden fixed bottom-0 inset-x-0 bg-[#0a0d14]/95 border-t border-slate-800/80 backdrop-blur z-40">
+      <div className="grid grid-cols-4 h-16">
+        {[
+          {label:'Home',path:'M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25'},
+          {label:'Events',path:'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5'},
+          {label:'Leaderboard',path:'M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 002.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 012.916.52 6.003 6.003 0 01-5.395 4.972m0 0a6.726 6.726 0 01-2.749 1.35m0 0a6.772 6.772 0 01-3.044 0',active:true},
+          {label:'Profile',path:'M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z'},
+        ].map(({label,path,active})=><button key={label} className={`flex flex-col items-center justify-center gap-1 ${active?'text-indigo-400':'text-slate-500 hover:text-slate-300'} transition-colors`}>
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={active?2:1.5}><path strokeLinecap="round" strokeLinejoin="round" d={path}/></svg>
+          <span className="text-[10px] font-medium">{label}</span>
+        </button>)}
+      </div>
+    </div>
+
+    {/* Modals */}
+    {sharing&&<ShareModal onClose={()=>{setSharing(false);setSharePickCard(null);}} pickForCard={sharePickCard}/>}
+    {creatorModal&&<CreatorModal creator={creatorModal} onClose={()=>setCreatorModal(null)}/>}
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<SportsPredict/>);
+</script>
+</body>
+</html>
